@@ -1,0 +1,204 @@
+import type { BoolCallback, LocData, LocationCallback, LoctionData } from '../interface.uts'
+
+import { NSObject, NSArray, NSDate, NSURL, NSError } from 'Foundation'
+import { UIApplication } from 'UIKit'
+import { CLLocation, CLLocationManager, CLLocationManagerDelegate } from 'CoreLocation'
+
+let _manager: CLLocationManager | null = null
+let _delegate: _UtsLocationDelegate | null = null
+let _callback: LocationCallback | null = null
+let _last: LoctionData | null = null
+
+let _onlyOnce: boolean = false
+let _throttleMs: number = 0
+let _throttleLastTs: number = 0
+
+function emptyLocation(): LoctionData {
+	return {
+		lat: 0,
+		lng: 0,
+		speed: 0,
+		altitude: 0,
+		bearing: 0,
+		accuracy: 0,
+		locationType: 0,
+		province: '',
+		city: '',
+		district: '',
+		address: ''
+	}
+}
+
+function ensureManager(): CLLocationManager {
+	if (_manager != null) return _manager!
+	_manager = new CLLocationManager()
+	_delegate = new _UtsLocationDelegate()
+	_manager!.delegate = _delegate!
+	return _manager!
+}
+
+function nowMs(): number {
+	return Math.floor(NSDate.date().timeIntervalSince1970 * 1000)
+}
+
+function toLocationData(loc: CLLocation): LoctionData {
+	const c = loc.coordinate
+	return {
+		lat: c.latitude,
+		lng: c.longitude,
+		speed: loc.speed,
+		altitude: loc.altitude,
+		bearing: loc.course,
+		accuracy: loc.horizontalAccuracy,
+		locationType: 1,
+		province: '',
+		city: '',
+		district: '',
+		address: ''
+	}
+}
+
+class _UtsLocationDelegate extends NSObject implements CLLocationManagerDelegate {
+	locationManager(_manager: CLLocationManager, @argumentLabel('didUpdateLocations') locations: NSArray<CLLocation>): void {
+		if (locations.count <= 0) return
+		const loc = locations.lastObject
+		if (loc == null) return
+
+		const now = nowMs()
+		if (_throttleMs > 0 && _throttleLastTs > 0 && now - _throttleLastTs < _throttleMs) {
+			return
+		}
+		_throttleLastTs = now
+
+		const data = toLocationData(loc)
+		_last = data
+		const cb = _callback
+		if (cb != null) cb(data)
+		if (_onlyOnce) {
+			try {
+				_manager.stopUpdatingLocation()
+			} catch (e) {
+				// ignore
+			}
+			_callback = null
+		}
+	}
+
+	locationManager(_manager: CLLocationManager, @argumentLabel('didFailWithError') _error: NSError): void {
+		// ignore
+	}
+}
+
+export function isProviderEnabled(cb: BoolCallback) {
+	try {
+		const enabled = CLLocationManager.locationServicesEnabled()
+		cb(enabled)
+	} catch (e) {
+		cb(false)
+	}
+}
+
+export function openLocSetting(cb: BoolCallback) {
+	try {
+		const url = NSURL.URLWithString(UIApplication.openSettingsURLString)
+		if (url == null) {
+			cb(false)
+			return
+		}
+		UIApplication.shared.openURL(url)
+		cb(true)
+	} catch (e) {
+		cb(false)
+	}
+}
+
+export function requestBackgroundLocPer(cb: BoolCallback) {
+	try {
+		const mgr = ensureManager()
+		// iOS 会根据 Info.plist 与系统状态弹窗/引导；这里仅发起请求
+		mgr.requestAlwaysAuthorization()
+		cb(true)
+	} catch (e) {
+		cb(false)
+	}
+}
+
+export function onStartLoc(data: LocData, cb: LocationCallback) {
+	const mgr = ensureManager()
+	_callback = cb
+	_onlyOnce = data.onlyOnce === true
+	_throttleMs = (data.time != null && data.time! > 0) ? data.time! : 0
+	_throttleLastTs = 0
+
+	try {
+		if (data.backgroud === true) {
+			mgr.requestAlwaysAuthorization()
+			mgr.allowsBackgroundLocationUpdates = true
+			mgr.pausesLocationUpdatesAutomatically = false
+		} else {
+			mgr.requestWhenInUseAuthorization()
+			mgr.allowsBackgroundLocationUpdates = false
+		}
+	} catch (e) {
+		// ignore
+	}
+
+	try {
+		// gps=true 代表更高精度
+		if (data.gps === true) {
+			mgr.desiredAccuracy = -2 // kCLLocationAccuracyBestForNavigation
+		} else {
+			mgr.desiredAccuracy = -1 // kCLLocationAccuracyBest
+		}
+	} catch (e) {
+		// ignore
+	}
+
+	try {
+		if (data.distance != null && data.distance! > 0) {
+			mgr.distanceFilter = data.distance!
+		}
+	} catch (e) {
+		// ignore
+	}
+
+	try {
+		mgr.startUpdatingLocation()
+	} catch (e) {
+		// ignore
+	}
+}
+
+export function onStartLocs(data: LocData, cb: LocationCallback) {
+	onStartLoc(data, cb)
+}
+
+export function getLastLocations(cb: LocationCallback) {
+	if (_last != null) {
+		cb(_last!)
+		return
+	}
+	try {
+		const mgr = ensureManager()
+		const loc = mgr.location
+		if (loc != null) {
+			const data = toLocationData(loc)
+			_last = data
+			cb(data)
+			return
+		}
+	} catch (e) {
+		// ignore
+	}
+	cb(emptyLocation())
+}
+
+export function stop(_removeNotif: boolean, cb: BoolCallback) {
+	try {
+		if (_manager != null) _manager!.stopUpdatingLocation()
+	} catch (e) {
+		// ignore
+	}
+	_callback = null
+	cb(true)
+}

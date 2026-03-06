@@ -1,0 +1,55 @@
+export type LocData = {
+	/**
+	 * android: gps高精度定位, iOS 无此开关
+	 */
+	gps?: boolean
+	/**
+	 * 是否后台定位/息屏定位（Android：前台服务；iOS：allowsBackgroundLocationUpdates）
+	 */
+	backgroud?: boolean
+	/**
+	 * 后台定位通知标题（Android）
+	 */
+	title?: string
+	/**
+	 * 后台定位通知内容（Android）
+	 */
+	content?: string
+	/**
+	 * 后台定位通知icon（Android，drawable 资源名，不含扩展名）
+	 */
+	resIcon?: string
+	/**
+	 * 定位时间间隔（ms）
+	 */
+	time?: number
+	/**
+	 * 定位距离间隔（m）
+	 */
+	distance?: number
+	/**
+	 * 只定位一次
+	 */
+	onlyOnce?: boolean
+}
+
+export type LoctionData = {
+	lat: number
+	lng: number
+	speed: number
+	altitude: number
+	bearing: number
+	accuracy: number
+	/**
+	 * 1: GPS, 2: Network/Other
+	 */
+	locationType: number
+	province: string
+	city: string
+	district: string
+	address: string
+}
+
+export type BoolCallback = (res: boolean) => void
+export type LocationCallback = (res: LoctionData) => void
+

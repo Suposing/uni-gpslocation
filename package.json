@@ -1,0 +1,24 @@
+{
+  "id": "uni-gpslocation",
+  "displayName": "GPS定位（前后台）",
+  "version": "0.0.1",
+  "description": "UTS 插件：GPS 前后台定位。",
+  "keywords": [
+    "uts",
+    "gps",
+    "location",
+    "foreground-service"
+  ],
+  "uni_modules": {
+    "platforms": {
+      "app": {
+        "android": {
+          "minSdkVersion": 21
+        },
+        "ios": {}
+      },
+      "web": {}
+    }
+  }
+}
+

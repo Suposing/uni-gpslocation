@@ -1,0 +1,388 @@
+import type { BoolCallback, LocData, LocationCallback, LoctionData } from '../interface.uts'
+
+import Context from 'android.content.Context'
+import Intent from 'android.content.Intent'
+import Settings from 'android.provider.Settings'
+import Build from 'android.os.Build'
+import Looper from 'android.os.Looper'
+
+import Location from 'android.location.Location'
+import LocationListener from 'android.location.LocationListener'
+import LocationManager from 'android.location.LocationManager'
+
+import NotificationChannel from 'android.app.NotificationChannel'
+import NotificationManager from 'android.app.NotificationManager'
+import PendingIntent from 'android.app.PendingIntent'
+
+import NotificationCompat from 'androidx.core.app.NotificationCompat'
+
+import { UTSAndroid } from 'io.dcloud.uts'
+
+const NOTIF_CHANNEL_ID = 'xtf_gpslocation'
+const NOTIF_CHANNEL_NAME = 'GPS Location'
+const NOTIF_ID = 21745
+
+let _callback: LocationCallback | null = null
+let _last: LoctionData | null = null
+let _listener: LocationListener | null = null
+let _locMgr: LocationManager | null = null
+let _started: boolean = false
+
+let _throttleLastTs: number = 0
+let _throttleMs: number = 0
+let _onlyOnce: boolean = false
+
+let _serviceRunning: boolean = false
+let _serviceRemoveNotifOnStop: boolean = true
+
+let _notifTitle: string = '后台定位'
+let _notifContent: string = '正在定位…'
+let _notifResIcon: string | null = null
+
+function emptyLocation(): LoctionData {
+	return {
+		lat: 0,
+		lng: 0,
+		speed: 0,
+		altitude: 0,
+		bearing: 0,
+		accuracy: 0,
+		locationType: 0,
+		province: '',
+		city: '',
+		district: '',
+		address: ''
+	}
+}
+
+function getContext(): Context | null {
+	const ctx = UTSAndroid.getAppContext()
+	if (ctx != null) return ctx as Context
+	const act = UTSAndroid.getUniActivity()
+	if (act != null) return act as Context
+	return null
+}
+
+function getLocationManager(): LocationManager | null {
+	if (_locMgr != null) return _locMgr
+	const ctx = getContext()
+	if (ctx == null) return null
+	_locMgr = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+	return _locMgr
+}
+
+function toLocationData(loc: Location): LoctionData {
+	const provider = loc.getProvider()
+	const locationType = provider == LocationManager.GPS_PROVIDER ? 1 : 2
+	return {
+		lat: loc.getLatitude(),
+		lng: loc.getLongitude(),
+		speed: loc.getSpeed(),
+		altitude: loc.getAltitude(),
+		bearing: loc.getBearing(),
+		accuracy: loc.getAccuracy(),
+		locationType,
+		province: '',
+		city: '',
+		district: '',
+		address: ''
+	}
+}
+
+function notifyLocation(loc: Location) {
+	const now = Date.now()
+	if (_throttleMs > 0 && _throttleLastTs > 0 && now - _throttleLastTs < _throttleMs) {
+		return
+	}
+	_throttleLastTs = now
+	const data = toLocationData(loc)
+	_last = data
+	const cb = _callback
+	if (cb != null) cb(data)
+	if (_onlyOnce) {
+		internalStop(true)
+	}
+}
+
+function chooseProvider(locMgr: LocationManager, preferGps: boolean): string | null {
+	const gpsEnabled = locMgr.isProviderEnabled(LocationManager.GPS_PROVIDER)
+	const netEnabled = locMgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+	if (preferGps) {
+		if (gpsEnabled) return LocationManager.GPS_PROVIDER
+		if (netEnabled) return LocationManager.NETWORK_PROVIDER
+		return null
+	} else {
+		if (netEnabled) return LocationManager.NETWORK_PROVIDER
+		if (gpsEnabled) return LocationManager.GPS_PROVIDER
+		return null
+	}
+}
+
+function ensureListener(): LocationListener {
+	const existing = _listener
+	if (existing != null) return existing
+	class UtsLocationListener implements LocationListener {
+		override onLocationChanged(location: Location): void {
+			notifyLocation(location)
+		}
+	}
+	const listener = new UtsLocationListener()
+	_listener = listener
+	return listener
+}
+
+function ensureChannel(ctx: Context) {
+	if (Build.VERSION.SDK_INT < 26) return
+	const mgr = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+	const channel = new NotificationChannel(NOTIF_CHANNEL_ID, NOTIF_CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW)
+	channel.setDescription('GPS location background service')
+	mgr.createNotificationChannel(channel)
+}
+
+function resolveSmallIcon(ctx: Context, resIcon: string | null): number {
+	if (resIcon != null && resIcon.length > 0) {
+		const id = ctx.getResources().getIdentifier(resIcon, 'drawable', ctx.getPackageName())
+		if (id != 0) return id
+	}
+	return ctx.getApplicationInfo().icon
+}
+
+function buildNotification(ctx: Context): any {
+	ensureChannel(ctx)
+	const launchIntent = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName())
+	let pending: PendingIntent | null = null
+	if (launchIntent != null) {
+		const flags = Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE : PendingIntent.FLAG_UPDATE_CURRENT
+		pending = PendingIntent.getActivity(ctx, 0, launchIntent, flags)
+	}
+	const iconId = resolveSmallIcon(ctx, _notifResIcon)
+	const builder = new NotificationCompat.Builder(ctx, NOTIF_CHANNEL_ID)
+	builder.setSmallIcon(iconId.toInt())
+	builder.setContentTitle(_notifTitle)
+	builder.setContentText(_notifContent)
+	builder.setOngoing(true)
+	builder.setPriority(NotificationCompat.PRIORITY_LOW)
+	const p = pending
+	if (p != null) builder.setContentIntent(p)
+	return builder.build()
+}
+
+function startForegroundServiceIfNeeded() {
+	if (_serviceRunning) return
+	const ctx = getContext()
+	if (ctx == null) return
+	const intent = new Intent()
+	intent.setClassName(ctx, 'uts.sdk.modules.xtfGpslocation.GpsLocationService')
+	if (Build.VERSION.SDK_INT >= 26) {
+		ctx.startForegroundService(intent)
+	} else {
+		ctx.startService(intent)
+	}
+	_serviceRunning = true
+}
+
+function stopForegroundServiceIfNeeded(removeNotif: boolean) {
+	const ctx = getContext()
+	if (ctx == null) return
+	if (!removeNotif) return
+	const intent = new Intent()
+	intent.setClassName(ctx, 'uts.sdk.modules.xtfGpslocation.GpsLocationService')
+	ctx.stopService(intent)
+	_serviceRunning = false
+}
+
+function internalStartUpdates(preferGps: boolean, timeMs: number, distanceM: number) {
+	const locMgr = getLocationManager()
+	if (locMgr == null) return
+	const provider = chooseProvider(locMgr, preferGps)
+	if (provider == null) return
+	const listener = ensureListener()
+	try {
+		locMgr.requestLocationUpdates(provider, timeMs.toLong(), distanceM.toFloat(), listener, Looper.getMainLooper())
+		_started = true
+	} catch (e) {
+		// ignore
+	}
+}
+
+function internalStop(removeNotif: boolean, fromService: boolean = false) {
+	const locMgr = getLocationManager()
+	if (locMgr != null && _listener != null) {
+		try {
+			locMgr.removeUpdates(_listener!)
+		} catch (e) {
+			// ignore
+		}
+	}
+	_started = false
+	_callback = null
+	_throttleLastTs = 0
+	_onlyOnce = false
+	_throttleMs = 0
+	if (!fromService) stopForegroundServiceIfNeeded(removeNotif)
+}
+
+function requestPermission(perms: Array<string>, cb: (ok: boolean) => void) {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) {
+		cb(false)
+		return
+	}
+	if (UTSAndroid.checkSystemPermissionGranted(act, perms)) {
+		cb(true)
+		return
+	}
+	UTSAndroid.requestSystemPermission(
+		act,
+		perms,
+		(_p: any) => cb(true),
+		(_p: any) => cb(false)
+	)
+}
+
+export function isProviderEnabled(cb: BoolCallback) {
+	const locMgr = getLocationManager()
+	if (locMgr == null) {
+		cb(false)
+		return
+	}
+	try {
+		const enabled = locMgr.isProviderEnabled(LocationManager.GPS_PROVIDER) || locMgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+		cb(enabled)
+	} catch (e) {
+		cb(false)
+	}
+}
+
+export function openLocSetting(cb: BoolCallback) {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) {
+		cb(false)
+		return
+	}
+	try {
+		const intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+		act.startActivity(intent)
+		cb(true)
+	} catch (e) {
+		cb(false)
+	}
+}
+
+export function requestBackgroundLocPer(cb: BoolCallback) {
+	const foreground = ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION']
+	requestPermission(foreground, (ok) => {
+		if (!ok) {
+			cb(false)
+			return
+		}
+		// Android 13+ 通知权限（用于前台服务常驻通知）
+		if (Build.VERSION.SDK_INT >= 33) {
+			requestPermission(['android.permission.POST_NOTIFICATIONS'], (_ok2) => {
+				// ignore result
+			})
+		}
+		// Android 10+ 后台定位权限
+		if (Build.VERSION.SDK_INT >= 29) {
+			requestPermission(['android.permission.ACCESS_BACKGROUND_LOCATION'], (okBg) => cb(okBg))
+		} else {
+			cb(true)
+		}
+	})
+}
+
+export function onStartLoc(data: LocData, cb: LocationCallback) {
+	_callback = cb
+
+	const preferGps = data.gps === true
+	const background = data.backgroud === true
+	_notifTitle = (data.title != null && data.title!.length > 0) ? data.title! : _notifTitle
+	_notifContent = (data.content != null && data.content!.length > 0) ? data.content! : _notifContent
+	_notifResIcon = data.resIcon != null ? data.resIcon! : null
+
+	_onlyOnce = data.onlyOnce === true
+	_throttleMs = (data.time != null && data.time! > 0) ? data.time! : 0
+
+	const distanceM = (data.distance != null && data.distance! > 0) ? data.distance! : 0
+	const minTime = (data.time != null && data.time! > 0) ? data.time! : 1000
+
+	_serviceRemoveNotifOnStop = true
+
+	// 先请求前台定位权限（后台权限建议调用 requestBackgroundLocPer）
+	requestPermission(['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION'], (ok) => {
+		if (!ok) return
+		if (background) {
+			startForegroundServiceIfNeeded()
+		}
+		internalStartUpdates(preferGps, minTime, distanceM)
+	})
+}
+
+export function onStartLocs(data: LocData, cb: LocationCallback) {
+	onStartLoc(data, cb)
+}
+
+export function getLastLocations(cb: LocationCallback) {
+	if (_last != null) {
+		cb(_last!)
+		return
+	}
+	const locMgr = getLocationManager()
+	if (locMgr == null) {
+		cb(emptyLocation())
+		return
+	}
+	try {
+		const gps = locMgr.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+		if (gps != null) {
+			const data = toLocationData(gps)
+			_last = data
+			cb(data)
+			return
+		}
+		const net = locMgr.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+		if (net != null) {
+			const data = toLocationData(net)
+			_last = data
+			cb(data)
+			return
+		}
+	} catch (e) {
+		// ignore
+	}
+	cb(emptyLocation())
+}
+
+export function stop(removeNotif: boolean, cb: BoolCallback) {
+	internalStop(removeNotif)
+	cb(true)
+}
+
+// 前台服务（后台定位/息屏定位）
+import Service from 'android.app.Service'
+import IBinder from 'android.os.IBinder'
+
+export class GpsLocationService extends Service {
+	override onBind(_intent: Intent): IBinder | null {
+		return null
+	}
+
+	override onStartCommand(_intent: Intent, _flags: number, _startId: number): number {
+		const ctx = this.getApplicationContext()
+		const notif = buildNotification(ctx)
+		try {
+			this.startForeground(NOTIF_ID, notif)
+		} catch (e) {
+			// ignore
+		}
+		// 服务启动时确保已在定位（实际定位逻辑由 onStartLoc 触发）
+		return Service.START_STICKY
+	}
+
+	override onDestroy(): void {
+		super.onDestroy()
+		_serviceRunning = false
+		if (_serviceRemoveNotifOnStop) internalStop(true, true)
+		else internalStop(false, true)
+	}
+}
