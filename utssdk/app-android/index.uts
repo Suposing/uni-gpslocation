@@ -4,17 +4,22 @@ import Context from 'android.content.Context'
 import Intent from 'android.content.Intent'
 import Settings from 'android.provider.Settings'
 import Build from 'android.os.Build'
+import Bundle from 'android.os.Bundle'
 import Looper from 'android.os.Looper'
+import Uri from 'android.net.Uri'
 
 import Location from 'android.location.Location'
-import LocationListener from 'android.location.LocationListener'
 import LocationManager from 'android.location.LocationManager'
 
 import NotificationChannel from 'android.app.NotificationChannel'
 import NotificationManager from 'android.app.NotificationManager'
+import Notification from 'android.app.Notification'
 import PendingIntent from 'android.app.PendingIntent'
 
 import NotificationCompat from 'androidx.core.app.NotificationCompat'
+import LocationListenerCompat from 'androidx.core.location.LocationListenerCompat'
+import LocationManagerCompat from 'androidx.core.location.LocationManagerCompat'
+import LocationRequestCompat from 'androidx.core.location.LocationRequestCompat'
 
 import { UTSAndroid } from 'io.dcloud.uts'
 
@@ -24,7 +29,7 @@ const NOTIF_ID = 21745
 
 let _callback: LocationCallback | null = null
 let _last: LoctionData | null = null
-let _listener: LocationListener | null = null
+let _listener: LocationListenerCompat | null = null
 let _locMgr: LocationManager | null = null
 let _started: boolean = false
 
@@ -69,6 +74,13 @@ function getLocationManager(): LocationManager | null {
 	if (ctx == null) return null
 	_locMgr = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 	return _locMgr
+}
+
+function shouldRequestPostNotifications(): boolean {
+	const ctx = getContext()
+	if (ctx == null) return false
+	if (Build.VERSION.SDK_INT < 33) return false
+	return ctx.getApplicationInfo().targetSdkVersion >= 33
 }
 
 function toLocationData(loc: Location): LoctionData {
@@ -118,12 +130,24 @@ function chooseProvider(locMgr: LocationManager, preferGps: boolean): string | n
 	}
 }
 
-function ensureListener(): LocationListener {
+function ensureListener(): LocationListenerCompat {
 	const existing = _listener
 	if (existing != null) return existing
-	class UtsLocationListener implements LocationListener {
+	class UtsLocationListener implements LocationListenerCompat {
 		override onLocationChanged(location: Location): void {
 			notifyLocation(location)
+		}
+
+		override onProviderEnabled(_provider: string): void {
+			// no-op
+		}
+
+		override onProviderDisabled(_provider: string): void {
+			// no-op
+		}
+
+		override onStatusChanged(_provider: string, _status: Int, _extras: Bundle | null): void {
+			// Deprecated on Android 10+, kept for old devices to avoid default-method bridging.
 		}
 	}
 	const listener = new UtsLocationListener()
@@ -147,7 +171,7 @@ function resolveSmallIcon(ctx: Context, resIcon: string | null): number {
 	return ctx.getApplicationInfo().icon
 }
 
-function buildNotification(ctx: Context): any {
+function buildNotification(ctx: Context): Notification {
 	ensureChannel(ctx)
 	const launchIntent = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName())
 	let pending: PendingIntent | null = null
@@ -172,7 +196,7 @@ function startForegroundServiceIfNeeded() {
 	const ctx = getContext()
 	if (ctx == null) return
 	const intent = new Intent()
-	intent.setClassName(ctx, 'uts.sdk.modules.xtfGpslocation.GpsLocationService')
+	intent.setClassName(ctx, 'uts.sdk.modules.uniGpslocation.GpsLocationService')
 	if (Build.VERSION.SDK_INT >= 26) {
 		ctx.startForegroundService(intent)
 	} else {
@@ -181,12 +205,12 @@ function startForegroundServiceIfNeeded() {
 	_serviceRunning = true
 }
 
-function stopForegroundServiceIfNeeded(removeNotif: boolean) {
+function stopForegroundServiceIfNeeded() {
 	const ctx = getContext()
 	if (ctx == null) return
-	if (!removeNotif) return
+	if (!_serviceRunning) return
 	const intent = new Intent()
-	intent.setClassName(ctx, 'uts.sdk.modules.xtfGpslocation.GpsLocationService')
+	intent.setClassName(ctx, 'uts.sdk.modules.uniGpslocation.GpsLocationService')
 	ctx.stopService(intent)
 	_serviceRunning = false
 }
@@ -197,8 +221,16 @@ function internalStartUpdates(preferGps: boolean, timeMs: number, distanceM: num
 	const provider = chooseProvider(locMgr, preferGps)
 	if (provider == null) return
 	const listener = ensureListener()
+	const requestBuilder = new LocationRequestCompat.Builder(timeMs.toLong())
+	requestBuilder.setMinUpdateIntervalMillis(timeMs.toLong())
+	requestBuilder.setMinUpdateDistanceMeters(distanceM.toFloat())
+	requestBuilder.setQuality(preferGps ? LocationRequestCompat.QUALITY_HIGH_ACCURACY : LocationRequestCompat.QUALITY_BALANCED_POWER_ACCURACY)
+	if (_onlyOnce) {
+		requestBuilder.setMaxUpdates(1)
+	}
+	const request = requestBuilder.build()
 	try {
-		locMgr.requestLocationUpdates(provider, timeMs.toLong(), distanceM.toFloat(), listener, Looper.getMainLooper())
+		LocationManagerCompat.requestLocationUpdates(locMgr, provider, request, listener, Looper.getMainLooper())
 		_started = true
 	} catch (e) {
 		// ignore
@@ -209,7 +241,7 @@ function internalStop(removeNotif: boolean, fromService: boolean = false) {
 	const locMgr = getLocationManager()
 	if (locMgr != null && _listener != null) {
 		try {
-			locMgr.removeUpdates(_listener!)
+			LocationManagerCompat.removeUpdates(locMgr, _listener!)
 		} catch (e) {
 			// ignore
 		}
@@ -219,7 +251,8 @@ function internalStop(removeNotif: boolean, fromService: boolean = false) {
 	_throttleLastTs = 0
 	_onlyOnce = false
 	_throttleMs = 0
-	if (!fromService) stopForegroundServiceIfNeeded(removeNotif)
+	_serviceRemoveNotifOnStop = removeNotif
+	if (!fromService) stopForegroundServiceIfNeeded()
 }
 
 function requestPermission(perms: Array<string>, cb: (ok: boolean) => void) {
@@ -232,12 +265,16 @@ function requestPermission(perms: Array<string>, cb: (ok: boolean) => void) {
 		cb(true)
 		return
 	}
-	UTSAndroid.requestSystemPermission(
-		act,
-		perms,
-		(_p: any) => cb(true),
-		(_p: any) => cb(false)
-	)
+	try {
+		UTSAndroid.requestSystemPermission(
+			act,
+			perms,
+			(_granted: boolean, _perms: UTSArray<string>) => cb(true),
+			(_granted: boolean, _perms: UTSArray<string>) => cb(false)
+		)
+	} catch (e) {
+		cb(false)
+	}
 }
 
 export function isProviderEnabled(cb: BoolCallback) {
@@ -269,7 +306,25 @@ export function openLocSetting(cb: BoolCallback) {
 	}
 }
 
+function openAppPermissionSetting(): boolean {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) return false
+	try {
+		const intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+		intent.setData(Uri.parse('package:' + act.getPackageName()))
+		act.startActivity(intent)
+		return true
+	} catch (e) {
+		return false
+	}
+}
+
 export function requestBackgroundLocPer(cb: BoolCallback) {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) {
+		cb(false)
+		return
+	}
 	const foreground = ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION']
 	requestPermission(foreground, (ok) => {
 		if (!ok) {
@@ -277,13 +332,22 @@ export function requestBackgroundLocPer(cb: BoolCallback) {
 			return
 		}
 		// Android 13+ 通知权限（用于前台服务常驻通知）
-		if (Build.VERSION.SDK_INT >= 33) {
+		if (shouldRequestPostNotifications()) {
 			requestPermission(['android.permission.POST_NOTIFICATIONS'], (_ok2) => {
 				// ignore result
 			})
 		}
 		// Android 10+ 后台定位权限
 		if (Build.VERSION.SDK_INT >= 29) {
+			if (UTSAndroid.checkSystemPermissionGranted(act, ['android.permission.ACCESS_BACKGROUND_LOCATION'])) {
+				cb(true)
+				return
+			}
+			if (Build.VERSION.SDK_INT >= 30) {
+				openAppPermissionSetting()
+				cb(false)
+				return
+			}
 			requestPermission(['android.permission.ACCESS_BACKGROUND_LOCATION'], (okBg) => cb(okBg))
 		} else {
 			cb(true)
@@ -362,16 +426,16 @@ export function stop(removeNotif: boolean, cb: BoolCallback) {
 import Service from 'android.app.Service'
 import IBinder from 'android.os.IBinder'
 
-export class GpsLocationService extends Service {
+export class GpsLocationService extends Service() {
 	override onBind(_intent: Intent): IBinder | null {
 		return null
 	}
 
-	override onStartCommand(_intent: Intent, _flags: number, _startId: number): number {
+	override onStartCommand(_intent: Intent | null, _flags: Int, _startId: Int): Int {
 		const ctx = this.getApplicationContext()
 		const notif = buildNotification(ctx)
 		try {
-			this.startForeground(NOTIF_ID, notif)
+			this.startForeground(NOTIF_ID.toInt(), notif)
 		} catch (e) {
 			// ignore
 		}

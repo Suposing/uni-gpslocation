@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-  package="io.dcloud.uni_modules.xtfGpslocation">
+  package="io.dcloud.uni_modules.uniGpslocation">
 
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -12,9 +12,8 @@
 
   <application>
     <service
-      android:name="uts.sdk.modules.xtfGpslocation.GpsLocationService"
+      android:name="uts.sdk.modules.uniGpslocation.GpsLocationService"
       android:exported="false"
       android:foregroundServiceType="location" />
   </application>
 </manifest>
-

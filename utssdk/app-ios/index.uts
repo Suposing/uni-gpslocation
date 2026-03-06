@@ -13,6 +13,23 @@ let _onlyOnce: boolean = false
 let _throttleMs: number = 0
 let _throttleLastTs: number = 0
 
+function currentAuthorizationStatus(): number {
+	try {
+		return CLLocationManager.authorizationStatus() as number
+	} catch (e) {
+		try {
+			const mgr = ensureManager()
+			return mgr.authorizationStatus as number
+		} catch (e2) {
+			return 0
+		}
+	}
+}
+
+function hasAlwaysAuthorization(): boolean {
+	return currentAuthorizationStatus() == 3
+}
+
 function emptyLocation(): LoctionData {
 	return {
 		lat: 0,
@@ -115,9 +132,13 @@ export function openLocSetting(cb: BoolCallback) {
 export function requestBackgroundLocPer(cb: BoolCallback) {
 	try {
 		const mgr = ensureManager()
-		// iOS 会根据 Info.plist 与系统状态弹窗/引导；这里仅发起请求
+		if (hasAlwaysAuthorization()) {
+			cb(true)
+			return
+		}
+		// iOS 会根据 Info.plist 与系统状态弹窗/引导；未完成授权前不返回成功
 		mgr.requestAlwaysAuthorization()
-		cb(true)
+		cb(false)
 	} catch (e) {
 		cb(false)
 	}
@@ -133,7 +154,7 @@ export function onStartLoc(data: LocData, cb: LocationCallback) {
 	try {
 		if (data.backgroud === true) {
 			mgr.requestAlwaysAuthorization()
-			mgr.allowsBackgroundLocationUpdates = true
+			mgr.allowsBackgroundLocationUpdates = hasAlwaysAuthorization()
 			mgr.pausesLocationUpdatesAutomatically = false
 		} else {
 			mgr.requestWhenInUseAuthorization()
@@ -155,9 +176,7 @@ export function onStartLoc(data: LocData, cb: LocationCallback) {
 	}
 
 	try {
-		if (data.distance != null && data.distance! > 0) {
-			mgr.distanceFilter = data.distance!
-		}
+		mgr.distanceFilter = (data.distance != null && data.distance! > 0) ? data.distance! : 0
 	} catch (e) {
 		// ignore
 	}
@@ -200,5 +219,8 @@ export function stop(_removeNotif: boolean, cb: BoolCallback) {
 		// ignore
 	}
 	_callback = null
+	_onlyOnce = false
+	_throttleMs = 0
+	_throttleLastTs = 0
 	cb(true)
 }
