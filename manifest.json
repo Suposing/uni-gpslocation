@@ -1,0 +1,83 @@
+{
+	"name": "android ios 原生gps前后台定位，系统定位-sample",
+	"appid": "__UNI__2FF0187",
+	"description": "",
+	"versionName": "1.0.0",
+	"versionCode": "100",
+	"quickapp": {},
+	"mp-weixin": {
+		"appid": "",
+		"setting": {
+			"urlCheck": false
+		},
+		"usingComponents": true
+	},
+	"mp-alipay": {
+		"usingComponents": true
+	},
+	"mp-baidu": {
+		"usingComponents": true
+	},
+	"mp-toutiao": {
+		"usingComponents": true
+	},
+	"uniStatistics": {
+		"enable": false
+	},
+	"vueVersion": "3",
+	"app": {
+		"distribute": {
+			"icons": {
+				"android": {
+					"hdpi": "",
+					"xhdpi": "",
+					"xxhdpi": "",
+					"xxxhdpi": ""
+				}
+			}
+		}
+	},
+	"app-android": {
+		"distribute": {
+			"modules": {},
+			"icons": {
+				"hdpi": "",
+				"xhdpi": "",
+				"xxhdpi": "",
+				"xxxhdpi": ""
+			},
+			"splashScreens": {
+				"default": {}
+			}
+		}
+	},
+	"app-ios": {
+		"distribute": {
+			"modules": {},
+			"icons": {},
+			"splashScreens": {}
+		}
+	},
+	"uni-app-x": {},
+	"app-harmony": {
+		"distribute": {
+			"bundleName": "uni.app.UNI4F30C38",
+			"signingConfigs": {
+				"default": {
+					"certpath": "/Users/lq/Library/Application Support/HBuilder X/extensions/launcher/agc-certs/1764432467728.cer",
+					"keyAlias": "debugKey",
+					"keyPassword": "0000001B6126917F5A03AB9ECC47E040FDDF1695B39C8D0F351BCDE002195F81B687DD81ADDF597C44E54B",
+					"profile": "/Users/lq/Library/Application Support/HBuilder X/extensions/launcher/agc-certs/1764432467728.p7b",
+					"signAlg": "SHA256withECDSA",
+					"storeFile": "/Users/lq/Library/Application Support/HBuilder X/extensions/launcher/agc-certs/1764432467728.p12",
+					"storePassword": "0000001B5633435CD4C99A30A7C74801AB0705BDED37CA5F7B940095433D5C0C9E60C59F83F29EEA93B652"
+				}
+			}
+		}
+	},
+	"web": {
+		"router": {
+			"mode": ""
+		}
+	}
+}

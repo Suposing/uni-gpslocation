@@ -1,0 +1,53 @@
+import type { BoolCallback, LocData, LocationCallback, LoctionData } from '../interface.uts'
+
+function unsupportedBool(cb: BoolCallback) {
+	if (cb != null) cb(false)
+}
+
+function unsupportedLocation(cb: LocationCallback) {
+	if (cb != null) {
+		const empty: LoctionData = {
+			lat: 0,
+			lng: 0,
+			speed: 0,
+			altitude: 0,
+			bearing: 0,
+			accuracy: 0,
+			locationType: 0,
+			province: '',
+			city: '',
+			district: '',
+			address: ''
+		}
+		cb(empty)
+	}
+}
+
+export function isProviderEnabled(cb: BoolCallback) {
+	unsupportedBool(cb)
+}
+
+export function openLocSetting(cb: BoolCallback) {
+	unsupportedBool(cb)
+}
+
+export function requestBackgroundLocPer(cb: BoolCallback) {
+	unsupportedBool(cb)
+}
+
+export function onStartLoc(_data: LocData, cb: LocationCallback) {
+	unsupportedLocation(cb)
+}
+
+export function onStartLocs(data: LocData, cb: LocationCallback) {
+	onStartLoc(data, cb)
+}
+
+export function getLastLocations(cb: LocationCallback) {
+	unsupportedLocation(cb)
+}
+
+export function stop(_removeNotif: boolean, cb: BoolCallback) {
+	unsupportedBool(cb)
+}
+

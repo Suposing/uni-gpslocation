@@ -1,0 +1,755 @@
+<template>
+	<scroll-view scroll-y="true" class="page">
+		<view class="hero">
+			<text class="hero-tag">uni-gpslocation Test Console</text>
+			<text class="hero-title">前后台定位测试台</text>
+			<text class="hero-desc">集中测试定位开关、后台权限、最近位置、持续回调和前台服务通知。</text>
+		</view>
+
+		<view class="card">
+			<view class="section-head">
+				<text class="section-title">运行状态</text>
+				<button class="ghost-btn" size="mini" @click="refreshProviderStatus">刷新状态</button>
+			</view>
+			<view class="stats-grid">
+				<view class="stat-item">
+					<text class="stat-label">定位开关</text>
+					<text class="stat-value">{{providerStatusText}}</text>
+				</view>
+				<view class="stat-item">
+					<text class="stat-label">后台权限</text>
+					<text class="stat-value">{{backgroundPermissionText}}</text>
+				</view>
+				<view class="stat-item">
+					<text class="stat-label">监听状态</text>
+					<text class="stat-value">{{trackingStatusText}}</text>
+				</view>
+				<view class="stat-item">
+					<text class="stat-label">最近位置轮询</text>
+					<text class="stat-value">{{latestLocationPollingText}}</text>
+				</view>
+				<view class="stat-item">
+					<text class="stat-label">定位次数</text>
+					<text class="stat-value">{{locationCountText}}</text>
+				</view>
+			</view>
+			<text class="status-line">最近动作：{{statusMessage}}</text>
+		</view>
+
+		<view class="card">
+			<view class="section-head">
+				<text class="section-title">测试动作</text>
+				<button class="ghost-btn" size="mini" @click="clearLogs">清空日志</button>
+			</view>
+			<view class="action-grid">
+				<button class="action-btn primary" @click="refreshProviderStatus">检查定位开关</button>
+				<button class="action-btn" @click="openSystemLocationSetting">打开系统定位设置</button>
+				<button class="action-btn accent" @click="requestBackgroundPermission">申请后台定位权限</button>
+				<button class="action-btn" @click="getLastLocation">获取最近一次定位</button>
+				<button class="action-btn primary" @click="startLatestLocationPolling">开始定时取最近位置</button>
+				<button class="action-btn warn" @click="stopLatestLocationPolling">停止定时取最近位置</button>
+				<button class="action-btn success" @click="startWatch">开始持续定位</button>
+				<button class="action-btn warn" @click="stopWatch">停止定位</button>
+			</view>
+		</view>
+
+		<view class="card">
+			<text class="section-title">测试参数</text>
+			<view class="preset-row">
+				<button class="preset-btn" size="mini" @click="applyGpsPreset">GPS高精度</button>
+				<button class="preset-btn" size="mini" @click="applyBalancedPreset">均衡测试</button>
+				<button class="preset-btn" size="mini" @click="applyOncePreset">单次定位</button>
+			</view>
+
+			<view class="switch-row">
+				<view class="switch-item">
+					<text class="field-label">使用 GPS</text>
+					<button class="toggle-btn" size="mini" @click="toggleGps">{{config.gps ? '已开启' : '已关闭'}}</button>
+				</view>
+				<view class="switch-item">
+					<text class="field-label">后台定位</text>
+					<button class="toggle-btn" size="mini" @click="toggleBackground">{{config.backgroud ? '已开启' : '已关闭'}}</button>
+				</view>
+				<view class="switch-item">
+					<text class="field-label">仅一次</text>
+					<button class="toggle-btn" size="mini" @click="toggleOnlyOnce">{{config.onlyOnce ? '已开启' : '已关闭'}}</button>
+				</view>
+			</view>
+
+			<view class="field-grid">
+				<view class="field-item">
+					<text class="field-label">时间间隔(ms)</text>
+					<text class="field-value">{{config.timeText}}</text>
+					<view class="mini-action-row">
+						<button class="mini-btn" size="mini" @click="decreaseTime">-1000</button>
+						<button class="mini-btn" size="mini" @click="increaseTime">+1000</button>
+					</view>
+				</view>
+				<view class="field-item">
+					<text class="field-label">距离间隔(m)</text>
+					<text class="field-value">{{config.distanceText}}</text>
+					<view class="mini-action-row">
+						<button class="mini-btn" size="mini" @click="decreaseDistance">-1</button>
+						<button class="mini-btn" size="mini" @click="increaseDistance">+1</button>
+					</view>
+				</view>
+				<view class="field-item">
+					<text class="field-label">通知标题</text>
+					<text class="field-value">{{config.title}}</text>
+					<view class="mini-action-row">
+						<button class="mini-btn" size="mini" @click="useTitlePresetA">后台测试</button>
+						<button class="mini-btn" size="mini" @click="useTitlePresetB">GPS高精度</button>
+					</view>
+				</view>
+				<view class="field-item">
+					<text class="field-label">通知内容</text>
+					<text class="field-value">{{config.content}}</text>
+					<view class="mini-action-row">
+						<button class="mini-btn" size="mini" @click="useContentPresetA">观察持续回调</button>
+						<button class="mini-btn" size="mini" @click="useContentPresetB">室外测试</button>
+					</view>
+				</view>
+			</view>
+
+			<text class="hint-text">建议：室内先测“均衡测试”，到室外再切“GPS高精度”；后台定位需在系统权限页开启“始终允许”。</text>
+		</view>
+
+		<view class="card">
+			<text class="section-title">最近定位结果</text>
+			<view class="location-grid">
+				<view class="location-item">
+					<text class="location-label">来源</text>
+					<text class="location-value">{{lastLocationSource}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">纬度</text>
+					<text class="location-value">{{lastLocation.lat}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">经度</text>
+					<text class="location-value">{{lastLocation.lng}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">速度</text>
+					<text class="location-value">{{lastLocation.speed}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">精度</text>
+					<text class="location-value">{{lastLocation.accuracy}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">方向</text>
+					<text class="location-value">{{lastLocation.bearing}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">海拔</text>
+					<text class="location-value">{{lastLocation.altitude}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">地址信息</text>
+					<text class="location-value">{{addressText}}</text>
+				</view>
+			</view>
+		</view>
+
+		<view class="card log-card">
+			<view class="section-head">
+				<text class="section-title">事件日志</text>
+				<text class="section-meta">{{logs.length}} 条</text>
+			</view>
+			<view v-if="logs.length === 0" class="empty-log">
+				<text class="empty-log-text">还没有日志，先执行一次检查或开始定位。</text>
+			</view>
+			<view v-for="(item, index) in logs" :key="index" class="log-item">
+				<text class="log-index">#{{logs.length - index}}</text>
+				<text class="log-text">{{item}}</text>
+			</view>
+		</view>
+	</scroll-view>
+</template>
+
+<script>
+	import {
+		onStartLocs,
+		isProviderEnabled,
+		openLocSetting,
+		LocData,
+		stop,
+		requestBackgroundLocPer,
+		getLastLocations,
+		LoctionData,
+	} from "@/uni_modules/uni-gpslocation"
+
+	type TestConfig = {
+		gps: boolean
+		backgroud: boolean
+		onlyOnce: boolean
+		timeText: string
+		distanceText: string
+		title: string
+		content: string
+	}
+
+	type DisplayLocation = {
+		lat: string
+		lng: string
+		speed: string
+		altitude: string
+		bearing: string
+		accuracy: string
+	}
+
+	function nowText(): string {
+		const now = new Date()
+		const hh = now.getHours().toString().padStart(2, '0')
+		const mm = now.getMinutes().toString().padStart(2, '0')
+		const ss = now.getSeconds().toString().padStart(2, '0')
+		return hh + ":" + mm + ":" + ss
+	}
+
+	function safeNumberText(value: number): string {
+		return value.toString()
+	}
+
+	function locationTypeText(type: number): string {
+		if (type == 1) return 'GPS'
+		if (type == 2) return 'Network/Other'
+		return 'Unknown'
+	}
+
+	let latestLocationPollingActive = false
+	let latestLocationPollingToken = 0
+
+	export default {
+		data() {
+			return {
+				statusMessage: '等待测试',
+				providerStatusText: '未检查',
+				backgroundPermissionText: '未检查',
+				trackingStatusText: '未开始',
+				latestLocationPollingText: '未开始',
+				locationCountText: '0',
+				lastLocationSource: '-',
+				addressText: '-',
+				logs: [] as Array<string>,
+				locationCount: 0,
+				config: {
+					gps: true,
+					backgroud: true,
+					onlyOnce: false,
+					timeText: '5000',
+					distanceText: '0',
+					title: '后台定位测试中',
+					content: '请保持应用运行以观察回调',
+				} as TestConfig,
+				lastLocation: {
+					lat: '-',
+					lng: '-',
+					speed: '-',
+					altitude: '-',
+					bearing: '-',
+					accuracy: '-',
+				} as DisplayLocation,
+			}
+		},
+		onLoad() {
+			this.pushLog('测试页已加载')
+			this.refreshProviderStatus()
+		},
+		onUnload() {
+			latestLocationPollingActive = false
+			latestLocationPollingToken = latestLocationPollingToken + 1
+		},
+		methods: {
+			pushLog(message:string) {
+				const line = '[' + nowText() + '] ' + message
+				const nextLogs = [line].concat(this.logs)
+				this.logs = nextLogs.slice(0, 40)
+				this.statusMessage = message
+			},
+			showToast(message:string) {
+				uni.showToast({
+					icon: 'none',
+					title: message,
+				})
+			},
+			buildLocData(): LocData {
+				const timeValue = this.config.timeText.toInt()
+				const distanceValue = this.config.distanceText.toInt()
+				return {
+					gps: this.config.gps,
+					backgroud: this.config.backgroud,
+					onlyOnce: this.config.onlyOnce,
+					time: timeValue > 0 ? timeValue : 1000,
+					distance: distanceValue >= 0 ? distanceValue : 0,
+					title: this.config.title,
+					content: this.config.content,
+				} as LocData
+			},
+			updateLocation(data:LoctionData, source:string) {
+				this.locationCount = this.locationCount + 1
+				this.locationCountText = this.locationCount.toString()
+				this.lastLocationSource = source + ' / ' + locationTypeText(data.locationType)
+				this.lastLocation = {
+					lat: safeNumberText(data.lat),
+					lng: safeNumberText(data.lng),
+					speed: safeNumberText(data.speed),
+					altitude: safeNumberText(data.altitude),
+					bearing: safeNumberText(data.bearing),
+					accuracy: safeNumberText(data.accuracy),
+				} as DisplayLocation
+
+				const addressParts = [data.province, data.city, data.district, data.address].filter((item:string) => item.length > 0)
+				this.addressText = addressParts.length > 0 ? addressParts.join(' ') : '插件当前未提供逆地理信息'
+				this.pushLog(source + '：lat=' + data.lat + ', lng=' + data.lng + ', speed=' + data.speed)
+			},
+			refreshProviderStatus() {
+				isProviderEnabled((enabled:boolean) => {
+					this.providerStatusText = enabled ? '已开启' : '未开启'
+					this.pushLog('定位开关状态：' + this.providerStatusText)
+				})
+			},
+			openSystemLocationSetting() {
+				openLocSetting((opened:boolean) => {
+					const message = opened ? '已打开系统定位设置' : '打开系统定位设置失败'
+					this.pushLog(message)
+					this.showToast(message)
+				})
+			},
+			requestBackgroundPermission() {
+				requestBackgroundLocPer((granted:boolean) => {
+					this.backgroundPermissionText = granted ? '已授权' : '需系统设置开启'
+					const message = granted ? '后台定位权限已授权' : '后台定位权限未就绪，请在系统权限页开启始终允许'
+					this.pushLog(message)
+					this.showToast(message)
+				})
+			},
+			fetchLastLocation(source:string) {
+				getLastLocations((data:LoctionData) => {
+					this.updateLocation(data, source)
+				})
+			},
+			getLastLocation() {
+				this.fetchLastLocation('最近位置')
+			},
+			scheduleLatestLocationPolling(token:number) {
+				const delayMs = this.config.timeText.toInt() > 0 ? this.config.timeText.toInt() : 1000
+				setTimeout(() => {
+					if (!latestLocationPollingActive) return
+					if (token != latestLocationPollingToken) return
+					this.fetchLastLocation('定时最近位置')
+					this.scheduleLatestLocationPolling(token)
+				}, delayMs)
+			},
+			startLatestLocationPolling() {
+				if (latestLocationPollingActive) {
+					this.pushLog('最近位置轮询已在运行')
+					this.showToast('轮询已在运行')
+					return
+				}
+				latestLocationPollingActive = true
+				latestLocationPollingToken = latestLocationPollingToken + 1
+				const token = latestLocationPollingToken
+				const delayMs = this.config.timeText.toInt() > 0 ? this.config.timeText.toInt() : 1000
+				this.latestLocationPollingText = '轮询中'
+				this.pushLog('开始定时获取最近位置，间隔 ' + (delayMs / 1000).toString() + ' 秒')
+				this.fetchLastLocation('定时最近位置')
+				this.scheduleLatestLocationPolling(token)
+			},
+			stopLatestLocationPolling() {
+				latestLocationPollingActive = false
+				latestLocationPollingToken = latestLocationPollingToken + 1
+				this.latestLocationPollingText = '已停止'
+				this.pushLog('已停止定时获取最近位置')
+			},
+			startWatch() {
+				const locData = this.buildLocData()
+				this.trackingStatusText = '启动中'
+				this.pushLog(
+					'开始定位：gps=' + locData.gps +
+					', backgroud=' + locData.backgroud +
+					', onlyOnce=' + locData.onlyOnce +
+					', time=' + locData.time +
+					', distance=' + locData.distance
+				)
+				onStartLocs(locData, (data:LoctionData) => {
+					this.trackingStatusText = this.config.onlyOnce ? '单次完成' : '监听中'
+					this.updateLocation(data, '实时回调')
+				})
+				this.trackingStatusText = '监听中'
+			},
+			stopWatch() {
+				stop(true, (_res:boolean) => {
+					this.trackingStatusText = '已停止'
+					this.pushLog('已停止定位并尝试移除前台通知')
+					this.showToast('已停止定位')
+				})
+			},
+			clearLogs() {
+				this.logs = []
+				this.statusMessage = '日志已清空'
+			},
+			applyGpsPreset() {
+				this.config.gps = true
+				this.config.backgroud = true
+				this.config.onlyOnce = false
+				this.config.timeText = '3000'
+				this.config.distanceText = '1'
+				this.config.title = 'GPS高精度定位中'
+				this.config.content = '请前往室外观察回调频率'
+				this.pushLog('已应用 GPS 高精度预设')
+			},
+			applyBalancedPreset() {
+				this.config.gps = false
+				this.config.backgroud = false
+				this.config.onlyOnce = false
+				this.config.timeText = '5000'
+				this.config.distanceText = '0'
+				this.config.title = '均衡定位测试中'
+				this.config.content = '适合室内快速验证'
+				this.pushLog('已应用均衡测试预设')
+			},
+			applyOncePreset() {
+				this.config.gps = true
+				this.config.backgroud = false
+				this.config.onlyOnce = true
+				this.config.timeText = '1000'
+				this.config.distanceText = '0'
+				this.config.title = '单次定位测试'
+				this.config.content = '用于验证首包定位'
+				this.pushLog('已应用单次定位预设')
+			},
+			toggleGps() {
+				this.config.gps = !this.config.gps
+				this.pushLog('使用 GPS：' + (this.config.gps ? '开启' : '关闭'))
+			},
+			toggleBackground() {
+				this.config.backgroud = !this.config.backgroud
+				this.pushLog('后台定位：' + (this.config.backgroud ? '开启' : '关闭'))
+			},
+			toggleOnlyOnce() {
+				this.config.onlyOnce = !this.config.onlyOnce
+				this.pushLog('仅一次：' + (this.config.onlyOnce ? '开启' : '关闭'))
+			},
+			increaseTime() {
+				const nextValue = this.config.timeText.toInt() + 1000
+				this.config.timeText = nextValue.toString()
+			},
+			decreaseTime() {
+				const nextValue = this.config.timeText.toInt() - 1000
+				this.config.timeText = (nextValue > 1000 ? nextValue : 1000).toString()
+			},
+			increaseDistance() {
+				const nextValue = this.config.distanceText.toInt() + 1
+				this.config.distanceText = nextValue.toString()
+			},
+			decreaseDistance() {
+				const nextValue = this.config.distanceText.toInt() - 1
+				this.config.distanceText = (nextValue > 0 ? nextValue : 0).toString()
+			},
+			useTitlePresetA() {
+				this.config.title = '后台定位测试中'
+			},
+			useTitlePresetB() {
+				this.config.title = 'GPS高精度定位中'
+			},
+			useContentPresetA() {
+				this.config.content = '请保持应用运行以观察回调'
+			},
+			useContentPresetB() {
+				this.config.content = '请前往室外观察定位频率'
+			},
+		}
+	}
+</script>
+
+<style>
+	.page {
+		height: 100%;
+		background-color: #f3efe7;
+	}
+
+	.hero {
+		display: flex;
+		flex-direction: column;
+		margin: 24rpx;
+		padding: 36rpx 32rpx;
+		border-radius: 28rpx;
+		background-color: #123524;
+	}
+
+	.hero-tag {
+		font-size: 22rpx;
+		color: #9dc7b1;
+		letter-spacing: 2rpx;
+	}
+
+	.hero-title {
+		margin-top: 16rpx;
+		font-size: 42rpx;
+		font-weight: 700;
+		color: #f5f1e8;
+	}
+
+	.hero-desc {
+		margin-top: 14rpx;
+		font-size: 26rpx;
+		line-height: 38rpx;
+		color: #d8e7dd;
+	}
+
+	.card {
+		margin: 0 24rpx 24rpx;
+		padding: 28rpx;
+		border-radius: 24rpx;
+		background-color: #fffdf8;
+	}
+
+	.section-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 18rpx;
+	}
+
+	.section-title {
+		font-size: 30rpx;
+		font-weight: 700;
+		color: #21312a;
+	}
+
+	.section-meta {
+		font-size: 22rpx;
+		color: #6b7d74;
+	}
+
+	.ghost-btn {
+		background-color: #e4efe8;
+		color: #123524;
+	}
+
+	.stats-grid {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin: 0 -8rpx;
+	}
+
+	.stat-item {
+		display: flex;
+		flex-direction: column;
+		width: 50%;
+		padding: 8rpx;
+		box-sizing: border-box;
+	}
+
+	.stat-label {
+		font-size: 22rpx;
+		color: #73857b;
+	}
+
+	.stat-value {
+		margin-top: 10rpx;
+		padding: 20rpx;
+		border-radius: 18rpx;
+		background-color: #edf5ef;
+		font-size: 28rpx;
+		font-weight: 700;
+		color: #123524;
+	}
+
+	.status-line {
+		margin-top: 18rpx;
+		font-size: 24rpx;
+		color: #4b5d54;
+	}
+
+	.action-grid {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin: 0 -8rpx;
+	}
+
+	.action-btn {
+		width: 50%;
+		margin-bottom: 16rpx;
+		padding: 0 8rpx;
+		box-sizing: border-box;
+		background-color: #dbe9ff;
+		color: #15304b;
+	}
+
+	.primary {
+		background-color: #d6f5eb;
+		color: #114232;
+	}
+
+	.accent {
+		background-color: #ffe8c8;
+		color: #7b4c00;
+	}
+
+	.success {
+		background-color: #d7f4d1;
+		color: #1c5a22;
+	}
+
+	.warn {
+		background-color: #ffd6cf;
+		color: #7a2315;
+	}
+
+	.preset-row {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-top: 18rpx;
+		margin-bottom: 20rpx;
+	}
+
+	.preset-btn {
+		margin-right: 16rpx;
+		margin-bottom: 12rpx;
+		background-color: #ece7dc;
+		color: #4b4335;
+	}
+
+	.switch-row {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin: 0 -8rpx 8rpx;
+	}
+
+	.switch-item {
+		display: flex;
+		flex-direction: column;
+		width: 33.33%;
+		padding: 8rpx;
+		box-sizing: border-box;
+	}
+
+	.field-grid {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin: 0 -8rpx;
+	}
+
+	.field-item {
+		display: flex;
+		flex-direction: column;
+		width: 50%;
+		padding: 8rpx;
+		box-sizing: border-box;
+	}
+
+	.field-label {
+		margin-bottom: 10rpx;
+		font-size: 24rpx;
+		color: #4c5d54;
+	}
+
+	.field-value {
+		min-height: 78rpx;
+		padding: 18rpx 22rpx;
+		border-radius: 18rpx;
+		background-color: #f4f1ea;
+		font-size: 26rpx;
+		color: #1f3128;
+		line-height: 38rpx;
+	}
+
+	.toggle-btn {
+		background-color: #dfeee6;
+		color: #123524;
+	}
+
+	.mini-action-row {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-top: 12rpx;
+	}
+
+	.mini-btn {
+		margin-right: 12rpx;
+		margin-bottom: 12rpx;
+		background-color: #ece7dc;
+		color: #4b4335;
+	}
+
+	.hint-text {
+		margin-top: 18rpx;
+		font-size: 22rpx;
+		line-height: 34rpx;
+		color: #6a7b72;
+	}
+
+	.location-grid {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin: 12rpx -8rpx 0;
+	}
+
+	.location-item {
+		display: flex;
+		flex-direction: column;
+		width: 50%;
+		padding: 8rpx;
+		box-sizing: border-box;
+	}
+
+	.location-label {
+		font-size: 22rpx;
+		color: #75867d;
+	}
+
+	.location-value {
+		margin-top: 8rpx;
+		min-height: 72rpx;
+		padding: 18rpx;
+		border-radius: 18rpx;
+		background-color: #f2f7f3;
+		font-size: 25rpx;
+		color: #173126;
+		line-height: 34rpx;
+	}
+
+	.log-card {
+		margin-bottom: 36rpx;
+	}
+
+	.empty-log {
+		padding: 24rpx 0 8rpx;
+	}
+
+	.empty-log-text {
+		font-size: 24rpx;
+		color: #798980;
+	}
+
+	.log-item {
+		display: flex;
+		flex-direction: column;
+		padding: 18rpx 0;
+		border-top-width: 1rpx;
+		border-top-style: solid;
+		border-top-color: #ece7dd;
+	}
+
+	.log-index {
+		font-size: 20rpx;
+		color: #8da094;
+	}
+
+	.log-text {
+		margin-top: 8rpx;
+		font-size: 24rpx;
+		line-height: 34rpx;
+		color: #26362e;
+	}
+</style>
