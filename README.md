@@ -1,6 +1,6 @@
-# uni-gpslocation
+# sup-gpslocation
 
-`uni-gpslocation` 是一个基于 UTS 的前后台 GPS 定位插件，面向 `uni-app x` / `uni_modules` 场景使用。
+`sup-gpslocation` 是一个基于 UTS 的前后台 GPS 定位插件，面向 `uni-app x` / `uni_modules` 场景使用。
 
 当前实现重点覆盖：
 
@@ -84,7 +84,7 @@ import {
 	type LocData,
 	type LocationQueryOptions,
 	type LocationData,
-} from "@/uni_modules/uni-gpslocation"
+} from "@/uni_modules/sup-gpslocation"
 ```
 
 ## 快速示例
@@ -99,7 +99,7 @@ import {
 	type LocData,
 	type LocationQueryOptions,
 	type LocationData,
-} from "@/uni_modules/uni-gpslocation"
+} from "@/uni_modules/sup-gpslocation"
 
 const options: LocData = {
 	gps: true,
