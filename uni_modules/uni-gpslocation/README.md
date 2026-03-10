@@ -41,7 +41,6 @@
 - 回调形式为 `callback`，不返回 `Promise`
 - iOS 端 `gps` 参数仅作为“更高精度”提示使用，没有 Android 那种显式 GPS / Network provider 选择
 - GNSS 信号字段当前只在 Android 尽量返回有效值，iOS / Harmony / Web 默认返回不可用值
-- `onStartLocs` 只是 `onStartLoc` 的别名
 
 ## 自动注入配置
 
@@ -79,7 +78,6 @@ import {
 	openNotificationSetting,
 	requestNotificationPermission,
 	requestBackgroundLocPer,
-	onStartLoc,
 	onStartLocs,
 	getLastLocations,
 	stop,
@@ -237,7 +235,7 @@ requestBackgroundLocPer((granted:boolean) => {
 - Android 11 及以上通常会跳到应用详情设置页，用户需手动开启“始终允许”，此时回调大概率先返回 `false`
 - iOS 会触发 `requestAlwaysAuthorization()`；如果当前还没拿到 `Always` 权限，回调不会直接返回成功
 
-### `onStartLoc(data, cb)`
+### `onStartLocs(data, cb)`
 
 开始定位。
 
@@ -251,14 +249,10 @@ const data: LocData = {
 	onlyOnce: false,
 }
 
-onStartLoc(data, (res:LocationData) => {
+onStartLocs(data, (res:LocationData) => {
 	console.log(res)
 })
 ```
-
-### `onStartLocs(data, cb)`
-
-与 `onStartLoc` 等价，方便按现有项目习惯调用。
 
 补充说明：
 
@@ -389,12 +383,12 @@ stop(true, (ok:boolean) => {
 3. 需要后台定位时先调用 `requestBackgroundLocPer`
 4. 后台持续定位前调用 `isNotificationPermissionAuthorized` / `requestNotificationPermission`
 5. 通知未就绪时调用 `openNotificationSetting`
-6. 再调用 `onStartLoc` / `onStartLocs`
+6. 再调用 `onStartLocs`
 7. 页面销毁或业务结束时调用 `stop(true, ...)`
 
 接口选型建议：
 
-- 需要持续拿到新位置、实时上报经纬度：使用 `onStartLoc` / `onStartLocs`
+- 需要持续拿到新位置、实时上报经纬度：使用 `onStartLocs`
 - 只需要读取最近已有位置做展示或兜底：使用 `getLastLocations`
 
 ## 测试建议

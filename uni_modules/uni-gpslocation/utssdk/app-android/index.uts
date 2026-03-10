@@ -702,8 +702,14 @@ export function requestBackgroundLocPer(cb: BoolCallback) {
 	})
 }
 
+/**
+ * @description 开始持续定位或单次定位监听，并按配置输出最新位置结果
+ * @param {LocData} data 定位请求参数
+ * @param {LocationCallback} cb 定位结果回调
+ * @returns {void}
+ */
 @UTSJS.keepAlive
-export function onStartLoc(data: LocData, cb: LocationCallback) {
+export function onStartLocs(data: LocData, cb: LocationCallback) {
 	_callback = cb
 
 	const preferGps = data.gps == true
@@ -731,11 +737,6 @@ export function onStartLoc(data: LocData, cb: LocationCallback) {
 			internalStartUpdates(preferGps, minTime, distanceM)
 		})
 	})
-}
-
-@UTSJS.keepAlive
-export function onStartLocs(data: LocData, cb: LocationCallback) {
-	onStartLoc(data, cb)
 }
 
 export function getLastLocations(options: LocationQueryOptions, cb: LocationCallback) {
@@ -792,7 +793,7 @@ export class GpsLocationService extends Service() {
 		} catch (e) {
 			// ignore
 		}
-		// 服务启动时确保已在定位（实际定位逻辑由 onStartLoc 触发）
+		// 服务启动时确保已在定位（实际定位逻辑由 onStartLocs 触发）
 		return Service.START_STICKY
 	}
 

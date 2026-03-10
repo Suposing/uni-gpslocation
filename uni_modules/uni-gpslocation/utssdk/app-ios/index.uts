@@ -203,8 +203,14 @@ export function requestBackgroundLocPer(cb: BoolCallback) {
 	}
 }
 
+/**
+ * @description 开始持续定位或单次定位监听，并按配置输出最新位置结果
+ * @param {LocData} data 定位请求参数
+ * @param {LocationCallback} cb 定位结果回调
+ * @returns {void}
+ */
 @UTSJS.keepAlive
-export function onStartLoc(data: LocData, cb: LocationCallback) {
+export function onStartLocs(data: LocData, cb: LocationCallback) {
 	const mgr = ensureManager()
 	_callback = cb
 	_onlyOnce = data.onlyOnce === true
@@ -246,11 +252,6 @@ export function onStartLoc(data: LocData, cb: LocationCallback) {
 	} catch (e) {
 		// ignore
 	}
-}
-
-@UTSJS.keepAlive
-export function onStartLocs(data: LocData, cb: LocationCallback) {
-	onStartLoc(data, cb)
 }
 
 export function getLastLocations(options: LocationQueryOptions, cb: LocationCallback) {
