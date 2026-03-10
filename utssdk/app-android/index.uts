@@ -1,14 +1,18 @@
-import type { BoolCallback, LocData, LocationCallback, LoctionData } from '../interface.uts'
+import type { BoolCallback, LocData, LocationCallback, LocationData, LocationQueryOptions } from '../interface.uts'
+import { normalizeCoordType, toOutputLocationData } from '../coord.uts'
 
 import Context from 'android.content.Context'
 import Intent from 'android.content.Intent'
 import Settings from 'android.provider.Settings'
 import Build from 'android.os.Build'
 import Bundle from 'android.os.Bundle'
+import Handler from 'android.os.Handler'
 import Looper from 'android.os.Looper'
 import Uri from 'android.net.Uri'
 
+import GnssStatus from 'android.location.GnssStatus'
 import Location from 'android.location.Location'
+import LocationListener from 'android.location.LocationListener'
 import LocationManager from 'android.location.LocationManager'
 
 import NotificationChannel from 'android.app.NotificationChannel'
@@ -17,34 +21,45 @@ import Notification from 'android.app.Notification'
 import PendingIntent from 'android.app.PendingIntent'
 
 import NotificationCompat from 'androidx.core.app.NotificationCompat'
-import LocationListenerCompat from 'androidx.core.location.LocationListenerCompat'
-import LocationManagerCompat from 'androidx.core.location.LocationManagerCompat'
-import LocationRequestCompat from 'androidx.core.location.LocationRequestCompat'
 
 import { UTSAndroid } from 'io.dcloud.uts'
 
 const NOTIF_CHANNEL_ID = 'xtf_gpslocation'
 const NOTIF_CHANNEL_NAME = 'GPS Location'
 const NOTIF_ID = 21745
+const SIGNAL_LEVEL_UNAVAILABLE = -1
+
+type GnssSignalSnapshot = {
+	signalLevel: number
+	satelliteCount: number
+	usedInFixCount: number
+	cn0DbHzAvg: number
+}
 
 let _callback: LocationCallback | null = null
-let _last: LoctionData | null = null
-let _listener: LocationListenerCompat | null = null
+let _lastRaw: LocationData | null = null
+let _listener: LocationListener | null = null
+let _gnssCallback: GnssStatus.Callback | null = null
 let _locMgr: LocationManager | null = null
 let _started: boolean = false
+let _gnssRegistered: boolean = false
 
 let _throttleLastTs: number = 0
 let _throttleMs: number = 0
 let _onlyOnce: boolean = false
-
 let _serviceRunning: boolean = false
 let _serviceRemoveNotifOnStop: boolean = true
+let _coordType: string = 'gcj02'
 
 let _notifTitle: string = '后台定位'
 let _notifContent: string = '正在定位…'
 let _notifResIcon: string | null = null
+let _signalLevel: number = SIGNAL_LEVEL_UNAVAILABLE
+let _satelliteCount: number = 0
+let _usedInFixCount: number = 0
+let _cn0DbHzAvg: number = 0
 
-function emptyLocation(): LoctionData {
+function emptyLocation(): LocationData {
 	return {
 		lat: 0,
 		lng: 0,
@@ -53,6 +68,10 @@ function emptyLocation(): LoctionData {
 		bearing: 0,
 		accuracy: 0,
 		locationType: 0,
+		signalLevel: SIGNAL_LEVEL_UNAVAILABLE,
+		satelliteCount: 0,
+		usedInFixCount: 0,
+		cn0DbHzAvg: 0,
 		province: '',
 		city: '',
 		district: '',
@@ -76,6 +95,12 @@ function getLocationManager(): LocationManager | null {
 	return _locMgr
 }
 
+function getNotificationManager(): NotificationManager | null {
+	const ctx = getContext()
+	if (ctx == null) return null
+	return ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+}
+
 function shouldRequestPostNotifications(): boolean {
 	const ctx = getContext()
 	if (ctx == null) return false
@@ -83,9 +108,172 @@ function shouldRequestPostNotifications(): boolean {
 	return ctx.getApplicationInfo().targetSdkVersion >= 33
 }
 
-function toLocationData(loc: Location): LoctionData {
+function isNotificationChannelEnabled(): boolean {
+	if (Build.VERSION.SDK_INT < 26) return true
+	const ctx = getContext()
+	const mgr = getNotificationManager()
+	if (ctx == null || mgr == null) return false
+	try {
+		ensureChannel(ctx)
+		const channel = mgr.getNotificationChannel(NOTIF_CHANNEL_ID)
+		if (channel == null) return true
+		return channel.getImportance() != NotificationManager.IMPORTANCE_NONE
+	} catch (e) {
+		return false
+	}
+}
+
+function isNotificationAccessEnabled(): boolean {
+	const act = UTSAndroid.getUniActivity()
+	const mgr = getNotificationManager()
+	if (act == null || mgr == null) return false
+	try {
+		if (!mgr.areNotificationsEnabled()) return false
+		if (shouldRequestPostNotifications()) {
+			if (!UTSAndroid.checkSystemPermissionGranted(act, ['android.permission.POST_NOTIFICATIONS'])) {
+				return false
+			}
+		}
+		return isNotificationChannelEnabled()
+	} catch (e) {
+		return false
+	}
+}
+
+function resetGnssSignalState(signalLevel: number = SIGNAL_LEVEL_UNAVAILABLE) {
+	_signalLevel = signalLevel
+	_satelliteCount = 0
+	_usedInFixCount = 0
+	_cn0DbHzAvg = 0
+}
+
+function getGnssSignalSnapshot(): GnssSignalSnapshot {
+	return {
+		signalLevel: _signalLevel,
+		satelliteCount: _satelliteCount,
+		usedInFixCount: _usedInFixCount,
+		cn0DbHzAvg: _cn0DbHzAvg,
+	} as GnssSignalSnapshot
+}
+
+function resolveSignalLevel(avgCn0DbHz: number, satelliteCount: number, usedInFixCount: number): number {
+	if (satelliteCount <= 0) return 0
+	if (avgCn0DbHz >= 38) return 4
+	if (avgCn0DbHz >= 32) return 3
+	if (avgCn0DbHz >= 25) return 2
+	if (avgCn0DbHz > 0 || usedInFixCount > 0) return 1
+	return 0
+}
+
+function updateGnssSignalState(satelliteCount: number, usedInFixCount: number, avgCn0DbHz: number) {
+	const normalizedAvg = avgCn0DbHz > 0 ? Math.round(avgCn0DbHz * 10) / 10 : 0
+	_satelliteCount = satelliteCount
+	_usedInFixCount = usedInFixCount
+	_cn0DbHzAvg = normalizedAvg
+	_signalLevel = resolveSignalLevel(normalizedAvg, satelliteCount, usedInFixCount)
+}
+
+function updateGnssSignalStateFromStatus(status: GnssStatus) {
+	const satelliteCount = status.getSatelliteCount()
+	let usedInFixCount = 0
+	let cn0Sum = 0.0
+	let cn0Count = 0
+	let index: Int = 0
+	while (index < satelliteCount) {
+		const usedInFix = status.usedInFix(index)
+		if (usedInFix) {
+			usedInFixCount += 1
+		}
+		const cn0 = status.getCn0DbHz(index)
+		if (usedInFix && cn0 > 0) {
+			cn0Sum += cn0
+			cn0Count += 1
+		}
+		index += 1
+	}
+	const avgCn0DbHz = cn0Count > 0 ? cn0Sum / cn0Count : 0
+	updateGnssSignalState(satelliteCount, usedInFixCount, avgCn0DbHz)
+}
+
+function ensureGnssStatusCallback(): GnssStatus.Callback | null {
+	const existing = _gnssCallback
+	if (existing != null) return existing
+	if (Build.VERSION.SDK_INT < 24) return null
+	class UtsGnssStatusCallback extends GnssStatus.Callback() {
+		override onStarted(): void {
+			if (_signalLevel < 0) {
+				resetGnssSignalState(0)
+			}
+		}
+
+		override onStopped(): void {
+			resetGnssSignalState()
+		}
+
+		override onFirstFix(_ttffMillis: Int): void {
+			// no-op
+		}
+
+		override onSatelliteStatusChanged(status: GnssStatus): void {
+			updateGnssSignalStateFromStatus(status)
+		}
+	}
+	const callback = new UtsGnssStatusCallback()
+	_gnssCallback = callback
+	return callback
+}
+
+function registerGnssStatusIfNeeded() {
+	if (_gnssRegistered) return
+	if (Build.VERSION.SDK_INT < 24) {
+		resetGnssSignalState()
+		return
+	}
+	const locMgr = getLocationManager()
+	const callback = ensureGnssStatusCallback()
+	if (locMgr == null || callback == null) {
+		resetGnssSignalState()
+		return
+	}
+	try {
+		const handler = new Handler(Looper.getMainLooper())
+		_gnssRegistered = locMgr.registerGnssStatusCallback(callback, handler)
+		if (!_gnssRegistered) {
+			resetGnssSignalState()
+		}
+	} catch (e) {
+		_gnssRegistered = false
+		resetGnssSignalState()
+	}
+}
+
+function unregisterGnssStatusIfNeeded() {
+	if (!_gnssRegistered) return
+	if (Build.VERSION.SDK_INT < 24) {
+		_gnssRegistered = false
+		resetGnssSignalState()
+		return
+	}
+	const locMgr = getLocationManager()
+	const callback = _gnssCallback
+	if (locMgr == null || callback == null) {
+		_gnssRegistered = false
+		resetGnssSignalState()
+		return
+	}
+	try {
+		locMgr.unregisterGnssStatusCallback(callback)
+	} catch (e) {
+		// ignore
+	}
+	_gnssRegistered = false
+	resetGnssSignalState()
+}
+
+function toLocationData(loc: Location): LocationData {
 	const provider = loc.getProvider()
 	const locationType = provider == LocationManager.GPS_PROVIDER ? 1 : 2
+	const signal = getGnssSignalSnapshot()
 	return {
 		lat: loc.getLatitude(),
 		lng: loc.getLongitude(),
@@ -94,6 +282,10 @@ function toLocationData(loc: Location): LoctionData {
 		bearing: loc.getBearing(),
 		accuracy: loc.getAccuracy(),
 		locationType,
+		signalLevel: signal.signalLevel,
+		satelliteCount: signal.satelliteCount,
+		usedInFixCount: signal.usedInFixCount,
+		cn0DbHzAvg: signal.cn0DbHzAvg,
 		province: '',
 		city: '',
 		district: '',
@@ -107,8 +299,9 @@ function notifyLocation(loc: Location) {
 		return
 	}
 	_throttleLastTs = now
-	const data = toLocationData(loc)
-	_last = data
+	const rawData = toLocationData(loc)
+	_lastRaw = rawData
+	const data = toOutputLocationData(rawData, _coordType)
 	const cb = _callback
 	if (cb != null) cb(data)
 	if (_onlyOnce) {
@@ -130,12 +323,48 @@ function chooseProvider(locMgr: LocationManager, preferGps: boolean): string | n
 	}
 }
 
-function ensureListener(): LocationListenerCompat {
+function resolveProviders(locMgr: LocationManager, preferGps: boolean): Array<string> {
+	const providers: Array<string> = []
+	const primary = chooseProvider(locMgr, preferGps)
+	if (primary == null) return providers
+
+	providers.push(primary)
+
+	if (preferGps && primary == LocationManager.GPS_PROVIDER) {
+		const netEnabled = locMgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+		if (netEnabled) {
+			providers.push(LocationManager.NETWORK_PROVIDER)
+		}
+	}
+
+	return providers
+}
+
+function normalizeRequestTime(timeMs: number): number {
+	if (timeMs <= 0) return 1000
+	// 原生监听保持较短间隔，业务上报频率仍由 _throttleMs 控制，避免首包等待过久。
+	return Math.max(1000, Math.min(timeMs, 5000))
+}
+
+function ensureListener(): LocationListener {
 	const existing = _listener
 	if (existing != null) return existing
-	class UtsLocationListener implements LocationListenerCompat {
+	class UtsLocationListener implements LocationListener {
 		override onLocationChanged(location: Location): void {
 			notifyLocation(location)
+		}
+
+		override onLocationChanged(locations: MutableList<Location>): void {
+			let index: Int = 0
+			while (index < locations.size) {
+				const location = locations.get(index)
+				notifyLocation(location)
+				index += 1
+			}
+		}
+
+		override onFlushComplete(_requestCode: Int): void {
+			// no-op
 		}
 
 		override onProviderEnabled(_provider: string): void {
@@ -146,8 +375,8 @@ function ensureListener(): LocationListenerCompat {
 			// no-op
 		}
 
+		@Deprecated("Deprecated in API 29")
 		override onStatusChanged(_provider: string, _status: Int, _extras: Bundle | null): void {
-			// Deprecated on Android 10+, kept for old devices to avoid default-method bridging.
 		}
 	}
 	const listener = new UtsLocationListener()
@@ -218,30 +447,31 @@ function stopForegroundServiceIfNeeded() {
 function internalStartUpdates(preferGps: boolean, timeMs: number, distanceM: number) {
 	const locMgr = getLocationManager()
 	if (locMgr == null) return
-	const provider = chooseProvider(locMgr, preferGps)
-	if (provider == null) return
+	registerGnssStatusIfNeeded()
+	const providers = resolveProviders(locMgr, preferGps)
+	if (providers.length <= 0) return
 	const listener = ensureListener()
-	const requestBuilder = new LocationRequestCompat.Builder(timeMs.toLong())
-	requestBuilder.setMinUpdateIntervalMillis(timeMs.toLong())
-	requestBuilder.setMinUpdateDistanceMeters(distanceM.toFloat())
-	requestBuilder.setQuality(preferGps ? LocationRequestCompat.QUALITY_HIGH_ACCURACY : LocationRequestCompat.QUALITY_BALANCED_POWER_ACCURACY)
-	if (_onlyOnce) {
-		requestBuilder.setMaxUpdates(1)
+	const requestTime = normalizeRequestTime(timeMs)
+	let started = false
+	let index = 0
+	while (index < providers.length) {
+		const provider = providers[index]
+		try {
+			locMgr.requestLocationUpdates(provider, requestTime.toLong(), distanceM.toFloat(), listener, Looper.getMainLooper())
+			started = true
+		} catch (e) {
+			// ignore
+		}
+		index += 1
 	}
-	const request = requestBuilder.build()
-	try {
-		LocationManagerCompat.requestLocationUpdates(locMgr, provider, request, listener, Looper.getMainLooper())
-		_started = true
-	} catch (e) {
-		// ignore
-	}
+	_started = started
 }
 
 function internalStop(removeNotif: boolean, fromService: boolean = false) {
 	const locMgr = getLocationManager()
 	if (locMgr != null && _listener != null) {
 		try {
-			LocationManagerCompat.removeUpdates(locMgr, _listener!)
+			locMgr.removeUpdates(_listener!)
 		} catch (e) {
 			// ignore
 		}
@@ -251,6 +481,7 @@ function internalStop(removeNotif: boolean, fromService: boolean = false) {
 	_throttleLastTs = 0
 	_onlyOnce = false
 	_throttleMs = 0
+	unregisterGnssStatusIfNeeded()
 	_serviceRemoveNotifOnStop = removeNotif
 	if (!fromService) stopForegroundServiceIfNeeded()
 }
@@ -275,6 +506,20 @@ function requestPermission(perms: Array<string>, cb: (ok: boolean) => void) {
 	} catch (e) {
 		cb(false)
 	}
+}
+
+/**
+ * @description 在需要后台定位时检查并兜底申请通知权限，保证前台服务通知可显示
+ * @param {boolean} background 是否后台定位
+ * @param {BoolCallback} cb 检查或申请后的结果回调
+ * @returns {void}
+ */
+function ensureNotificationPermissionForForegroundService(background: boolean, cb: BoolCallback) {
+	if (!background) {
+		cb(true)
+		return
+	}
+	requestNotificationPermission(cb)
 }
 
 export function isProviderEnabled(cb: BoolCallback) {
@@ -319,6 +564,109 @@ function openAppPermissionSetting(): boolean {
 	}
 }
 
+function openNotificationPermissionSetting(): boolean {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) return false
+	try {
+		const intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+		if (Build.VERSION.SDK_INT >= 26) {
+			intent.putExtra('android.provider.extra.APP_PACKAGE', act.getPackageName())
+			intent.putExtra('android.provider.extra.CHANNEL_ID', NOTIF_CHANNEL_ID)
+		} else {
+			intent.putExtra('app_package', act.getPackageName())
+			intent.putExtra('app_uid', act.getApplicationInfo().uid)
+		}
+		act.startActivity(intent)
+		return true
+	} catch (e) {
+		return openAppPermissionSetting()
+	}
+}
+
+export function openAppDetailSetting(cb: BoolCallback) {
+	const result = openAppPermissionSetting()
+	cb(result)
+}
+
+/**
+ * @description 打开应用通知设置页，便于手动开启应用通知或定位通知渠道
+ * @param {BoolCallback} cb 打开结果回调
+ * @returns {void}
+ */
+export function openNotificationSetting(cb: BoolCallback) {
+	const result = openNotificationPermissionSetting()
+	cb(result)
+}
+
+/**
+ * @description 检查通知权限是否已经授权，便于显示前台服务通知
+ * @param {BoolCallback} cb 检查结果回调
+ * @returns {void}
+ */
+export function isNotificationPermissionAuthorized(cb: BoolCallback) {
+	try {
+		cb(isNotificationAccessEnabled())
+	} catch (e) {
+		cb(false)
+	}
+}
+
+/**
+ * @description 申请应用通知权限；若系统仅支持手动开启，则返回当前通知状态
+ * @param {BoolCallback} cb 申请或检查结果回调
+ * @returns {void}
+ */
+export function requestNotificationPermission(cb: BoolCallback) {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) {
+		cb(false)
+		return
+	}
+	if (isNotificationAccessEnabled()) {
+		cb(true)
+		return
+	}
+	if (!shouldRequestPostNotifications()) {
+		cb(false)
+		return
+	}
+	requestPermission(['android.permission.POST_NOTIFICATIONS'], (ok) => {
+		if (!ok) {
+			cb(false)
+			return
+		}
+		cb(isNotificationAccessEnabled())
+	})
+}
+
+/**
+ * @description 检查后台定位权限是否已经授权
+ * @param {BoolCallback} cb 检查结果回调
+ * @returns {void}
+ */
+export function isBackgroundLocAuthorized(cb: BoolCallback) {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) {
+		cb(false)
+		return
+	}
+	try {
+		const foreground = ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION']
+		const hasForeground = UTSAndroid.checkSystemPermissionGranted(act, foreground)
+		if (!hasForeground) {
+			cb(false)
+			return
+		}
+		if (Build.VERSION.SDK_INT >= 29) {
+			cb(UTSAndroid.checkSystemPermissionGranted(act, ['android.permission.ACCESS_BACKGROUND_LOCATION']))
+			return
+		}
+		cb(true)
+	} catch (e) {
+		cb(false)
+	}
+}
+
 export function requestBackgroundLocPer(cb: BoolCallback) {
 	const act = UTSAndroid.getUniActivity()
 	if (act == null) {
@@ -333,7 +681,7 @@ export function requestBackgroundLocPer(cb: BoolCallback) {
 		}
 		// Android 13+ 通知权限（用于前台服务常驻通知）
 		if (shouldRequestPostNotifications()) {
-			requestPermission(['android.permission.POST_NOTIFICATIONS'], (_ok2) => {
+			requestNotificationPermission((_ok2:boolean) => {
 				// ignore result
 			})
 		}
@@ -344,7 +692,6 @@ export function requestBackgroundLocPer(cb: BoolCallback) {
 				return
 			}
 			if (Build.VERSION.SDK_INT >= 30) {
-				openAppPermissionSetting()
 				cb(false)
 				return
 			}
@@ -355,16 +702,24 @@ export function requestBackgroundLocPer(cb: BoolCallback) {
 	})
 }
 
-export function onStartLoc(data: LocData, cb: LocationCallback) {
+/**
+ * @description 开始持续定位或单次定位监听，并按配置输出最新位置结果
+ * @param {LocData} data 定位请求参数
+ * @param {LocationCallback} cb 定位结果回调
+ * @returns {void}
+ */
+@UTSJS.keepAlive
+export function onStartLocs(data: LocData, cb: LocationCallback) {
 	_callback = cb
 
-	const preferGps = data.gps === true
-	const background = data.backgroud === true
+	const preferGps = data.gps == true
+	const background = data.background == true
+	_coordType = normalizeCoordType(data.coordType != null ? data.coordType! : null)
 	_notifTitle = (data.title != null && data.title!.length > 0) ? data.title! : _notifTitle
 	_notifContent = (data.content != null && data.content!.length > 0) ? data.content! : _notifContent
 	_notifResIcon = data.resIcon != null ? data.resIcon! : null
 
-	_onlyOnce = data.onlyOnce === true
+	_onlyOnce = data.onlyOnce == true
 	_throttleMs = (data.time != null && data.time! > 0) ? data.time! : 0
 
 	const distanceM = (data.distance != null && data.distance! > 0) ? data.distance! : 0
@@ -375,20 +730,19 @@ export function onStartLoc(data: LocData, cb: LocationCallback) {
 	// 先请求前台定位权限（后台权限建议调用 requestBackgroundLocPer）
 	requestPermission(['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION'], (ok) => {
 		if (!ok) return
-		if (background) {
-			startForegroundServiceIfNeeded()
-		}
-		internalStartUpdates(preferGps, minTime, distanceM)
+		ensureNotificationPermissionForForegroundService(background, (_notifGranted:boolean) => {
+			if (background) {
+				startForegroundServiceIfNeeded()
+			}
+			internalStartUpdates(preferGps, minTime, distanceM)
+		})
 	})
 }
 
-export function onStartLocs(data: LocData, cb: LocationCallback) {
-	onStartLoc(data, cb)
-}
-
-export function getLastLocations(cb: LocationCallback) {
-	if (_last != null) {
-		cb(_last!)
+export function getLastLocations(options: LocationQueryOptions, cb: LocationCallback) {
+	const coordType = normalizeCoordType(options.coordType != null ? options.coordType! : null)
+	if (_lastRaw != null) {
+		cb(toOutputLocationData(_lastRaw!, coordType))
 		return
 	}
 	const locMgr = getLocationManager()
@@ -399,16 +753,16 @@ export function getLastLocations(cb: LocationCallback) {
 	try {
 		const gps = locMgr.getLastKnownLocation(LocationManager.GPS_PROVIDER)
 		if (gps != null) {
-			const data = toLocationData(gps)
-			_last = data
-			cb(data)
+			const rawData = toLocationData(gps)
+			_lastRaw = rawData
+			cb(toOutputLocationData(rawData, coordType))
 			return
 		}
 		const net = locMgr.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
 		if (net != null) {
-			const data = toLocationData(net)
-			_last = data
-			cb(data)
+			const rawData = toLocationData(net)
+			_lastRaw = rawData
+			cb(toOutputLocationData(rawData, coordType))
 			return
 		}
 	} catch (e) {
@@ -439,7 +793,7 @@ export class GpsLocationService extends Service() {
 		} catch (e) {
 			// ignore
 		}
-		// 服务启动时确保已在定位（实际定位逻辑由 onStartLoc 触发）
+		// 服务启动时确保已在定位（实际定位逻辑由 onStartLocs 触发）
 		return Service.START_STICKY
 	}
 

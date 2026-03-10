@@ -1,4 +1,4 @@
-import type { BoolCallback, LocData, LocationCallback, LoctionData } from '../interface.uts'
+import type { BoolCallback, LocData, LocationCallback, LocationData, LocationQueryOptions } from '../interface.uts'
 
 function unsupportedBool(cb: BoolCallback) {
 	if (cb != null) cb(false)
@@ -6,7 +6,7 @@ function unsupportedBool(cb: BoolCallback) {
 
 function unsupportedLocation(cb: LocationCallback) {
 	if (cb != null) {
-		const empty: LoctionData = {
+		const empty: LocationData = {
 			lat: 0,
 			lng: 0,
 			speed: 0,
@@ -14,6 +14,10 @@ function unsupportedLocation(cb: LocationCallback) {
 			bearing: 0,
 			accuracy: 0,
 			locationType: 0,
+			signalLevel: -1,
+			satelliteCount: 0,
+			usedInFixCount: 0,
+			cn0DbHzAvg: 0,
 			province: '',
 			city: '',
 			district: '',
@@ -31,23 +35,69 @@ export function openLocSetting(cb: BoolCallback) {
 	unsupportedBool(cb)
 }
 
+/**
+ * @description 打开当前应用详情或设置页；当前平台未实现
+ * @param {BoolCallback} cb 打开结果回调
+ * @returns {void}
+ */
+export function openAppDetailSetting(cb: BoolCallback) {
+	unsupportedBool(cb)
+}
+
+/**
+ * @description 打开应用通知设置页；当前平台未实现
+ * @param {BoolCallback} cb 打开结果回调
+ * @returns {void}
+ */
+export function openNotificationSetting(cb: BoolCallback) {
+	unsupportedBool(cb)
+}
+
+/**
+ * @description 检查通知权限是否已经授权；当前平台默认按无需额外授权处理
+ * @param {BoolCallback} cb 检查结果回调
+ * @returns {void}
+ */
+export function isNotificationPermissionAuthorized(cb: BoolCallback) {
+	if (cb != null) cb(true)
+}
+
+/**
+ * @description 申请应用通知权限；当前平台默认按无需额外授权处理
+ * @param {BoolCallback} cb 申请结果回调
+ * @returns {void}
+ */
+export function requestNotificationPermission(cb: BoolCallback) {
+	if (cb != null) cb(true)
+}
+
+/**
+ * @description 检查后台定位权限是否已经授权；当前平台未实现
+ * @param {BoolCallback} cb 检查结果回调
+ * @returns {void}
+ */
+export function isBackgroundLocAuthorized(cb: BoolCallback) {
+	unsupportedBool(cb)
+}
+
 export function requestBackgroundLocPer(cb: BoolCallback) {
 	unsupportedBool(cb)
 }
 
-export function onStartLoc(_data: LocData, cb: LocationCallback) {
+/**
+ * @description 开始持续定位或单次定位监听；当前平台未实现
+ * @param {LocData} _data 定位请求参数
+ * @param {LocationCallback} cb 定位结果回调
+ * @returns {void}
+ */
+export function onStartLocs(_data: LocData, cb: LocationCallback) {
 	unsupportedLocation(cb)
 }
 
-export function onStartLocs(data: LocData, cb: LocationCallback) {
-	onStartLoc(data, cb)
-}
-
-export function getLastLocations(cb: LocationCallback) {
+export function getLastLocations(_options: LocationQueryOptions, cb: LocationCallback) {
 	unsupportedLocation(cb)
 }
 
 export function stop(_removeNotif: boolean, cb: BoolCallback) {
 	unsupportedBool(cb)
 }
-

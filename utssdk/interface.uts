@@ -1,12 +1,19 @@
+/**
+ * @description 定位请求配置
+ */
 export type LocData = {
 	/**
 	 * android: gps高精度定位, iOS 无此开关
 	 */
 	gps?: boolean
 	/**
+	 * 输出坐标系，支持 gcj02 / wgs84，默认 gcj02
+	 */
+	coordType?: string
+	/**
 	 * 是否后台定位/息屏定位（Android：前台服务；iOS：allowsBackgroundLocationUpdates）
 	 */
-	backgroud?: boolean
+	background?: boolean
 	/**
 	 * 后台定位通知标题（Android）
 	 */
@@ -33,23 +40,81 @@ export type LocData = {
 	onlyOnce?: boolean
 }
 
-export type LoctionData = {
+/**
+ * @description 最近定位查询配置
+ */
+export type LocationQueryOptions = {
+	/**
+	 * 输出坐标系，支持 gcj02 / wgs84，默认 gcj02
+	 */
+	coordType?: string
+}
+
+/**
+ * @description 定位结果数据
+ */
+export type LocationData = {
+	/**
+	 * 纬度
+	 */
 	lat: number
+	/**
+	 * 经度
+	 */
 	lng: number
+	/**
+	 * 速度
+	 */
 	speed: number
+	/**
+	 * 海拔
+	 */
 	altitude: number
+	/**
+	 * 方向
+	 */
 	bearing: number
+	/**
+	 * 水平精度
+	 */
 	accuracy: number
 	/**
 	 * 1: GPS, 2: Network/Other
 	 */
 	locationType: number
+	/**
+	 * GNSS 信号等级，-1 表示当前平台或当前结果不可用，0-4 表示由弱到强
+	 */
+	signalLevel: number
+	/**
+	 * 当前可见卫星数量；不可用时返回 0
+	 */
+	satelliteCount: number
+	/**
+	 * 当前参与定位解算的卫星数量；不可用时返回 0
+	 */
+	usedInFixCount: number
+	/**
+	 * 当前参与解算卫星的平均载噪比，单位 dB-Hz；不可用时返回 0
+	 */
+	cn0DbHzAvg: number
+	/**
+	 * 省份，当前默认空字符串
+	 */
 	province: string
+	/**
+	 * 城市，当前默认空字符串
+	 */
 	city: string
+	/**
+	 * 区县，当前默认空字符串
+	 */
 	district: string
+	/**
+	 * 地址，当前默认空字符串
+	 */
 	address: string
 }
 
 export type BoolCallback = (res: boolean) => void
-export type LocationCallback = (res: LoctionData) => void
-
+export type LocationCallback = (res: LocationData) => void

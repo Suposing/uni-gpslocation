@@ -1,4 +1,5 @@
-import type { BoolCallback, LocData, LocationCallback, LoctionData } from '../interface.uts'
+import type { BoolCallback, LocData, LocationCallback, LocationData, LocationQueryOptions } from '../interface.uts'
+import { normalizeCoordType, toOutputLocationData } from '../coord.uts'
 
 import { NSObject, NSArray, NSDate, NSURL, NSError } from 'Foundation'
 import { UIApplication } from 'UIKit'
@@ -7,12 +8,12 @@ import { CLLocation, CLLocationManager, CLLocationManagerDelegate } from 'CoreLo
 let _manager: CLLocationManager | null = null
 let _delegate: _UtsLocationDelegate | null = null
 let _callback: LocationCallback | null = null
-let _last: LoctionData | null = null
+let _lastRaw: LocationData | null = null
 
 let _onlyOnce: boolean = false
 let _throttleMs: number = 0
 let _throttleLastTs: number = 0
-
+let _coordType: string = 'gcj02'
 function currentAuthorizationStatus(): number {
 	try {
 		return CLLocationManager.authorizationStatus() as number
@@ -30,7 +31,7 @@ function hasAlwaysAuthorization(): boolean {
 	return currentAuthorizationStatus() == 3
 }
 
-function emptyLocation(): LoctionData {
+function emptyLocation(): LocationData {
 	return {
 		lat: 0,
 		lng: 0,
@@ -39,6 +40,10 @@ function emptyLocation(): LoctionData {
 		bearing: 0,
 		accuracy: 0,
 		locationType: 0,
+		signalLevel: -1,
+		satelliteCount: 0,
+		usedInFixCount: 0,
+		cn0DbHzAvg: 0,
 		province: '',
 		city: '',
 		district: '',
@@ -58,7 +63,7 @@ function nowMs(): number {
 	return Math.floor(NSDate.date().timeIntervalSince1970 * 1000)
 }
 
-function toLocationData(loc: CLLocation): LoctionData {
+function toLocationData(loc: CLLocation): LocationData {
 	const c = loc.coordinate
 	return {
 		lat: c.latitude,
@@ -68,6 +73,10 @@ function toLocationData(loc: CLLocation): LoctionData {
 		bearing: loc.course,
 		accuracy: loc.horizontalAccuracy,
 		locationType: 1,
+		signalLevel: -1,
+		satelliteCount: 0,
+		usedInFixCount: 0,
+		cn0DbHzAvg: 0,
 		province: '',
 		city: '',
 		district: '',
@@ -87,8 +96,9 @@ class _UtsLocationDelegate extends NSObject implements CLLocationManagerDelegate
 		}
 		_throttleLastTs = now
 
-		const data = toLocationData(loc)
-		_last = data
+		const rawData = toLocationData(loc)
+		_lastRaw = rawData
+		const data = toOutputLocationData(rawData, _coordType)
 		const cb = _callback
 		if (cb != null) cb(data)
 		if (_onlyOnce) {
@@ -129,6 +139,55 @@ export function openLocSetting(cb: BoolCallback) {
 	}
 }
 
+/**
+ * @description 打开当前应用设置页，便于手动调整后台定位权限
+ * @param {BoolCallback} cb 打开结果回调
+ * @returns {void}
+ */
+export function openAppDetailSetting(cb: BoolCallback) {
+	openLocSetting(cb)
+}
+
+/**
+ * @description 打开当前应用通知设置页；iOS 统一跳转到 App 设置页
+ * @param {BoolCallback} cb 打开结果回调
+ * @returns {void}
+ */
+export function openNotificationSetting(cb: BoolCallback) {
+	openLocSetting(cb)
+}
+
+/**
+ * @description 检查通知权限是否已经授权；当前平台不依赖 Android 前台服务通知权限
+ * @param {BoolCallback} cb 检查结果回调
+ * @returns {void}
+ */
+export function isNotificationPermissionAuthorized(cb: BoolCallback) {
+	cb(true)
+}
+
+/**
+ * @description 申请应用通知权限；当前平台按无需额外申请前台服务通知处理
+ * @param {BoolCallback} cb 申请结果回调
+ * @returns {void}
+ */
+export function requestNotificationPermission(cb: BoolCallback) {
+	cb(true)
+}
+
+/**
+ * @description 检查后台定位权限是否已经授权
+ * @param {BoolCallback} cb 检查结果回调
+ * @returns {void}
+ */
+export function isBackgroundLocAuthorized(cb: BoolCallback) {
+	try {
+		cb(hasAlwaysAuthorization())
+	} catch (e) {
+		cb(false)
+	}
+}
+
 export function requestBackgroundLocPer(cb: BoolCallback) {
 	try {
 		const mgr = ensureManager()
@@ -144,15 +203,22 @@ export function requestBackgroundLocPer(cb: BoolCallback) {
 	}
 }
 
-export function onStartLoc(data: LocData, cb: LocationCallback) {
+/**
+ * @description 开始持续定位或单次定位监听，并按配置输出最新位置结果
+ * @param {LocData} data 定位请求参数
+ * @param {LocationCallback} cb 定位结果回调
+ * @returns {void}
+ */
+@UTSJS.keepAlive
+export function onStartLocs(data: LocData, cb: LocationCallback) {
 	const mgr = ensureManager()
 	_callback = cb
 	_onlyOnce = data.onlyOnce === true
+	_coordType = normalizeCoordType(data.coordType != null ? data.coordType! : null)
 	_throttleMs = (data.time != null && data.time! > 0) ? data.time! : 0
 	_throttleLastTs = 0
-
 	try {
-		if (data.backgroud === true) {
+		if (data.background === true) {
 			mgr.requestAlwaysAuthorization()
 			mgr.allowsBackgroundLocationUpdates = hasAlwaysAuthorization()
 			mgr.pausesLocationUpdatesAutomatically = false
@@ -188,22 +254,19 @@ export function onStartLoc(data: LocData, cb: LocationCallback) {
 	}
 }
 
-export function onStartLocs(data: LocData, cb: LocationCallback) {
-	onStartLoc(data, cb)
-}
-
-export function getLastLocations(cb: LocationCallback) {
-	if (_last != null) {
-		cb(_last!)
+export function getLastLocations(options: LocationQueryOptions, cb: LocationCallback) {
+	const coordType = normalizeCoordType(options.coordType != null ? options.coordType! : null)
+	if (_lastRaw != null) {
+		cb(toOutputLocationData(_lastRaw!, coordType))
 		return
 	}
 	try {
 		const mgr = ensureManager()
 		const loc = mgr.location
 		if (loc != null) {
-			const data = toLocationData(loc)
-			_last = data
-			cb(data)
+			const rawData = toLocationData(loc)
+			_lastRaw = rawData
+			cb(toOutputLocationData(rawData, coordType))
 			return
 		}
 	} catch (e) {
