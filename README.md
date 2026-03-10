@@ -1,6 +1,6 @@
 # sup-gpslocation
 
-`sup-gpslocation` 是一个基于 UTS 的前后台 GPS 定位插件，面向 `uni-app x` / `uni_modules` 场景使用。
+`sup-gpslocation` 是一个基于 UTS 的前后台 GPS 定位插件，面向 `uni-app`/ `uni-app x` / `uni_modules` 场景使用。
 
 当前实现重点覆盖：
 
@@ -11,12 +11,12 @@
 
 ## 支持平台
 
-| 平台 | 支持情况 | 说明 |
-| --- | --- | --- |
-| Android | 支持 | 最低 `minSdkVersion = 21`，后台定位通过前台服务实现 |
-| iOS | 支持 | 后台定位依赖 `Always` 权限和 `location` 后台模式 |
-| Harmony | 未实现 | 当前为占位实现，接口返回 `false` 或空定位数据 |
-| Web | 未实现 | 当前为占位实现，接口返回 `false` 或空定位数据 |
+| 平台    | 支持情况 | 说明                                                  |
+| ------- | -------- | ----------------------------------------------------- |
+| Android | 支持     | 最低 `minSdkVersion = 21`，后台定位通过前台服务实现 |
+| iOS     | 支持     | 后台定位依赖 `Always` 权限和 `location` 后台模式  |
+| Harmony | 未实现   | 当前为占位实现，接口返回 `false` 或空定位数据       |
+| Web     | 未实现   | 当前为占位实现，接口返回 `false` 或空定位数据       |
 
 ## 功能说明
 
@@ -301,17 +301,17 @@ stop(true, (ok:boolean) => {
 
 ## `LocData` 参数
 
-| 字段 | 类型 | 默认含义 | 说明 |
-| --- | --- | --- | --- |
-| `gps` | `boolean` | `false` | Android 优先使用 GPS 高精度；iOS 仅作为更高精度配置参考 |
-| `coordType` | `string` | `gcj02` | 输出坐标系，支持 `gcj02` / `wgs84` |
-| `background` | `boolean` | `false` | 是否启用后台定位 |
-| `title` | `string` | `后台定位` | Android 前台服务通知标题 |
-| `content` | `string` | `正在定位…` | Android 前台服务通知内容 |
-| `resIcon` | `string` | 应用图标 | Android 通知小图标，填 `drawable` 资源名，不带扩展名 |
-| `time` | `number` | `0` | 定位时间间隔，单位毫秒；Android 发起定位请求时最小按 `1000` 处理 |
-| `distance` | `number` | `0` | 最小位移间隔，单位米 |
-| `onlyOnce` | `boolean` | `false` | 是否只定位一次 |
+| 字段           | 类型        | 默认含义       | 说明                                                               |
+| -------------- | ----------- | -------------- | ------------------------------------------------------------------ |
+| `gps`        | `boolean` | `false`      | Android 优先使用 GPS 高精度；iOS 仅作为更高精度配置参考            |
+| `coordType`  | `string`  | `gcj02`      | 输出坐标系，支持 `gcj02` / `wgs84`                             |
+| `background` | `boolean` | `false`      | 是否启用后台定位                                                   |
+| `title`      | `string`  | `后台定位`   | Android 前台服务通知标题                                           |
+| `content`    | `string`  | `正在定位…` | Android 前台服务通知内容                                           |
+| `resIcon`    | `string`  | 应用图标       | Android 通知小图标，填 `drawable` 资源名，不带扩展名             |
+| `time`       | `number`  | `0`          | 定位时间间隔，单位毫秒；Android 发起定位请求时最小按 `1000` 处理 |
+| `distance`   | `number`  | `0`          | 最小位移间隔，单位米                                               |
+| `onlyOnce`   | `boolean` | `false`      | 是否只定位一次                                                     |
 
 补充说明：
 
@@ -321,8 +321,8 @@ stop(true, (ok:boolean) => {
 
 ## `LocationQueryOptions` 参数
 
-| 字段 | 类型 | 默认含义 | 说明 |
-| --- | --- | --- | --- |
+| 字段          | 类型       | 默认含义  | 说明                                           |
+| ------------- | ---------- | --------- | ---------------------------------------------- |
 | `coordType` | `string` | `gcj02` | 最近定位输出坐标系，支持 `gcj02` / `wgs84` |
 
 补充说明：
@@ -331,23 +331,23 @@ stop(true, (ok:boolean) => {
 
 ## `LocationData` 返回值
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `lat` | `number` | 纬度 |
-| `lng` | `number` | 经度 |
-| `speed` | `number` | 速度 |
-| `altitude` | `number` | 海拔 |
-| `bearing` | `number` | 方向 |
-| `accuracy` | `number` | 精度 |
-| `locationType` | `number` | `1 = GPS`，`2 = Network/Other`，`0 = 空结果/未实现` |
-| `signalLevel` | `number` | GNSS 信号等级，`-1 = 不可用`，`0-4 = 由弱到强` |
-| `satelliteCount` | `number` | 当前可见卫星数量 |
-| `usedInFixCount` | `number` | 当前参与定位解算的卫星数量 |
-| `cn0DbHzAvg` | `number` | 当前参与解算卫星的平均载噪比，单位 `dB-Hz` |
-| `province` | `string` | 当前未实现，默认空字符串 |
-| `city` | `string` | 当前未实现，默认空字符串 |
-| `district` | `string` | 当前未实现，默认空字符串 |
-| `address` | `string` | 当前未实现，默认空字符串 |
+| 字段               | 类型       | 说明                                                      |
+| ------------------ | ---------- | --------------------------------------------------------- |
+| `lat`            | `number` | 纬度                                                      |
+| `lng`            | `number` | 经度                                                      |
+| `speed`          | `number` | 速度                                                      |
+| `altitude`       | `number` | 海拔                                                      |
+| `bearing`        | `number` | 方向                                                      |
+| `accuracy`       | `number` | 精度                                                      |
+| `locationType`   | `number` | `1 = GPS`，`2 = Network/Other`，`0 = 空结果/未实现` |
+| `signalLevel`    | `number` | GNSS 信号等级，`-1 = 不可用`，`0-4 = 由弱到强`        |
+| `satelliteCount` | `number` | 当前可见卫星数量                                          |
+| `usedInFixCount` | `number` | 当前参与定位解算的卫星数量                                |
+| `cn0DbHzAvg`     | `number` | 当前参与解算卫星的平均载噪比，单位 `dB-Hz`              |
+| `province`       | `string` | 当前未实现，默认空字符串                                  |
+| `city`           | `string` | 当前未实现，默认空字符串                                  |
+| `district`       | `string` | 当前未实现，默认空字符串                                  |
+| `address`        | `string` | 当前未实现，默认空字符串                                  |
 
 ## 平台差异
 
