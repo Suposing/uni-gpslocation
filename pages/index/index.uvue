@@ -1,7 +1,7 @@
 <template>
 	<scroll-view scroll-y="true" class="page">
 		<view class="hero">
-			<text class="hero-tag">uni-gpslocation Test Console</text>
+			<text class="hero-tag">sup-gpslocation Test Console</text>
 			<text class="hero-title">前后台定位测试台</text>
 			<text class="hero-desc">集中测试定位开关、后台权限、最近位置、持续回调和前台服务通知。</text>
 		</view>
@@ -237,8 +237,8 @@
 		openNotificationSetting,
 		stop,
 		getLastLocations,
-	} from "@/uni_modules/uni-gpslocation"
-	import type { LocData, LocationQueryOptions, LocationData } from "@/uni_modules/uni-gpslocation"
+	} from "@/uni_modules/sup-gpslocation"
+	import type { LocData, LocationQueryOptions, LocationData } from "@/uni_modules/sup-gpslocation"
 
 	type TestConfig = {
 		gps: boolean

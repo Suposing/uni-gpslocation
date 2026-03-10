@@ -4,10 +4,10 @@
 本文件用于说明当前仓库中 AI 助手与人类协作者的分工、协作边界和执行约束，确保在 `uni-app x` 定位测试工程内开展修改时，流程清晰、上下文准确、风险可控。
 
 ## 当前项目概览
-- 当前仓库是一个 `uni-app x` 示例工程，主要用于验证 `uni_modules/uni-gpslocation` 插件的前台定位、后台定位、最近位置获取与系统设置跳转能力。
+- 当前仓库是一个 `uni-app x` 示例工程，主要用于验证 `uni_modules/sup-gpslocation` 插件的前台定位、后台定位、最近位置获取与系统设置跳转能力。
 - 入口文件为 `App.uvue`、`main.uts`，页面入口为 `pages/index/index.uvue`。
 - 应用配置集中在 `manifest.json`、`pages.json`、`uni.scss`。
-- 插件主体位于 `uni_modules/uni-gpslocation`，包含 Android、iOS、Harmony、Web 的 UTS 实现与说明文档。
+- 插件主体位于 `uni_modules/sup-gpslocation`，包含 Android、iOS、Harmony、Web 的 UTS 实现与说明文档。
 - `unpackage/`、`.history/`、`.hbuilderx/` 主要为构建产物、历史记录和 IDE 配置，默认不作为业务逻辑修改目标。
 
 ## Agent 清单
@@ -38,7 +38,7 @@
 - 应用入口：`main.uts`
 - 页面路由与窗口配置：`pages.json`
 - 应用 ID、版本、平台配置与权限相关声明：`manifest.json`
-- 定位插件实现与文档：`uni_modules/uni-gpslocation/**`
+- 定位插件实现与文档：`uni_modules/sup-gpslocation/**`
 
 ### 默认谨慎处理的目录
 - `unpackage/`：构建输出目录，通常不手改，除非你明确要求检查构建产物。
@@ -46,7 +46,7 @@
 - `.hbuilderx/`：IDE 本地配置，仅在你明确要求调整运行配置时才修改。
 
 ### 平台与能力现状
-- 插件当前面向 Android / iOS 的定位测试场景，Android 最低版本要求见 `uni_modules/uni-gpslocation/package.json`。
+- 插件当前面向 Android / iOS 的定位测试场景，Android 最低版本要求见 `uni_modules/sup-gpslocation/package.json`。
 - Harmony / Web 目录存在占位实现时，默认按“未完整实现”处理，不擅自承诺可用能力。
 - 与定位相关的系统权限、后台运行、通知、系统设置跳转等行为，必须结合真实平台差异说明，不得只按单一平台假设。
 
@@ -65,7 +65,7 @@
 
 ## 常见任务模板
 - **页面调整**：提供页面目标、交互预期、截图或文案要求 → Codex 修改 `pages/index/index.uvue` → 人工在 HBuilderX 真机预览验证。
-- **插件修复**：提供复现步骤、平台、权限状态、日志现象 → Codex 检查 `uni_modules/uni-gpslocation` 实现 → 人工回归前后台定位场景。
+- **插件修复**：提供复现步骤、平台、权限状态、日志现象 → Codex 检查 `uni_modules/sup-gpslocation` 实现 → 人工回归前后台定位场景。
 - **配置修改**：说明要变更的版本号、权限、页面标题或路由 → Codex 修改 `manifest.json` / `pages.json` → 人工重新运行构建。
 - **文档同步**：说明目标读者与需覆盖内容 → Codex 更新说明文档或注释 → 人工审核措辞与准确性。
 
