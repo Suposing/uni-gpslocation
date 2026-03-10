@@ -9,7 +9,7 @@
 		<view class="card">
 			<view class="section-head">
 				<text class="section-title">运行状态</text>
-				<button class="ghost-btn" size="mini" @click="refreshProviderStatus">刷新状态</button>
+				<button class="ghost-btn" size="mini" @click="refreshProviderStatus(true)">刷新状态</button>
 			</view>
 			<view class="stats-grid">
 				<view class="stat-item">
@@ -19,6 +19,10 @@
 				<view class="stat-item">
 					<text class="stat-label">后台权限</text>
 					<text class="stat-value">{{backgroundPermissionText}}</text>
+				</view>
+				<view class="stat-item">
+					<text class="stat-label">通知状态</text>
+					<text class="stat-value">{{notificationPermissionText}}</text>
 				</view>
 				<view class="stat-item">
 					<text class="stat-label">监听状态</text>
@@ -42,14 +46,42 @@
 				<button class="ghost-btn" size="mini" @click="clearLogs">清空日志</button>
 			</view>
 			<view class="action-grid">
-				<button class="action-btn primary" @click="refreshProviderStatus">检查定位开关</button>
-				<button class="action-btn" @click="openSystemLocationSetting">打开系统定位设置</button>
-				<button class="action-btn accent" @click="requestBackgroundPermission">申请后台定位权限</button>
-				<button class="action-btn" @click="getLastLocation">获取最近一次定位</button>
-				<button class="action-btn primary" @click="startLatestLocationPolling">开始定时取最近位置</button>
-				<button class="action-btn warn" @click="stopLatestLocationPolling">停止定时取最近位置</button>
-				<button class="action-btn success" @click="startWatch">开始持续定位</button>
-				<button class="action-btn warn" @click="stopWatch">停止定位</button>
+				<view class="action-item">
+					<button class="action-btn primary" @click="refreshProviderStatus(true)">检查定位开关</button>
+					<text class="action-desc">读取系统定位服务当前状态，确认 GPS 或网络定位开关是否已开启。</text>
+				</view>
+				<view class="action-item">
+					<button class="action-btn" @click="openSystemLocationSetting">打开系统定位设置</button>
+					<text class="action-desc">直接跳转到系统定位设置页，方便手动开启系统定位开关。</text>
+				</view>
+				<view class="action-item">
+					<button class="action-btn accent" @click="requestBackgroundPermission">申请后台定位权限</button>
+					<text class="action-desc">检查后台定位授权状态；未授权时弹窗提示，并可跳转应用详情页继续设置。</text>
+				</view>
+				<view class="action-item">
+					<button class="action-btn accent" @click="requestNotificationAccess">申请通知权限</button>
+					<text class="action-desc">检测应用通知与定位通知渠道状态；Android 13+ 会尝试申请通知权限，未开启时可跳转通知设置页。</text>
+				</view>
+				<view class="action-item">
+					<button class="action-btn" @click="getLastLocation">获取最近一次定位</button>
+					<text class="action-desc">读取插件缓存或系统保存的最近定位结果，不会主动新发起一次完整定位。</text>
+				</view>
+				<view class="action-item">
+					<button class="action-btn primary" @click="startLatestLocationPolling">开始定时取最近位置</button>
+					<text class="action-desc">按当前时间间隔定时轮询“最近位置”，适合观察缓存位置是否持续刷新。</text>
+				</view>
+				<view class="action-item">
+					<button class="action-btn warn" @click="stopLatestLocationPolling">停止定时取最近位置</button>
+					<text class="action-desc">停止页面层的最近位置轮询定时器，不再继续读取最近一次定位。</text>
+				</view>
+				<view class="action-item">
+					<button class="action-btn success" @click="startWatch">开始持续定位</button>
+					<text class="action-desc">启动原生持续定位监听；后台定位开启时会尝试拉起前台服务并显示通知。</text>
+				</view>
+				<view class="action-item">
+					<button class="action-btn warn" @click="stopWatch">停止定位</button>
+					<text class="action-desc">停止持续定位监听，并尝试移除前台服务通知与相关状态。</text>
+				</view>
 			</view>
 		</view>
 
@@ -68,7 +100,7 @@
 				</view>
 				<view class="switch-item">
 					<text class="field-label">后台定位</text>
-					<button class="toggle-btn" size="mini" @click="toggleBackground">{{config.backgroud ? '已开启' : '已关闭'}}</button>
+					<button class="toggle-btn" size="mini" @click="toggleBackground">{{config.background ? '已开启' : '已关闭'}}</button>
 				</view>
 				<view class="switch-item">
 					<text class="field-label">仅一次</text>
@@ -77,6 +109,14 @@
 			</view>
 
 			<view class="field-grid">
+				<view class="field-item">
+					<text class="field-label">坐标系</text>
+					<text class="field-value">{{config.coordType.toUpperCase()}}</text>
+					<view class="mini-action-row">
+						<button :class="config.coordType == 'gcj02' ? 'mini-btn mini-btn-active' : 'mini-btn'" size="mini" @click="useGcj02CoordType">GCJ02</button>
+						<button :class="config.coordType == 'wgs84' ? 'mini-btn mini-btn-active' : 'mini-btn'" size="mini" @click="useWgs84CoordType">WGS84</button>
+					</view>
+				</view>
 				<view class="field-item">
 					<text class="field-label">时间间隔(ms)</text>
 					<text class="field-value">{{config.timeText}}</text>
@@ -111,7 +151,7 @@
 				</view>
 			</view>
 
-			<text class="hint-text">建议：室内先测“均衡测试”，到室外再切“GPS高精度”；后台定位需在系统权限页开启“始终允许”。</text>
+			<text class="hint-text">建议：室内先测“均衡测试”，到室外再切“GPS高精度”；后台定位需开启“始终允许”，应用通知与定位通知渠道也要保持开启。</text>
 		</view>
 
 		<view class="card">
@@ -146,6 +186,22 @@
 					<text class="location-value">{{lastLocation.altitude}}</text>
 				</view>
 				<view class="location-item">
+					<text class="location-label">信号等级</text>
+					<text class="location-value">{{lastLocation.signalLevel}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">可见卫星</text>
+					<text class="location-value">{{lastLocation.satelliteCount}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">参与解算卫星</text>
+					<text class="location-value">{{lastLocation.usedInFixCount}}</text>
+				</view>
+				<view class="location-item">
+					<text class="location-label">平均 C/N0</text>
+					<text class="location-value">{{lastLocation.cn0DbHzAvg}}</text>
+				</view>
+				<view class="location-item">
 					<text class="location-label">地址信息</text>
 					<text class="location-value">{{addressText}}</text>
 				</view>
@@ -157,7 +213,7 @@
 				<text class="section-title">事件日志</text>
 				<text class="section-meta">{{logs.length}} 条</text>
 			</view>
-			<view v-if="logs.length === 0" class="empty-log">
+			<view v-if="logs.length == 0" class="empty-log">
 				<text class="empty-log-text">还没有日志，先执行一次检查或开始定位。</text>
 			</view>
 			<view v-for="(item, index) in logs" :key="index" class="log-item">
@@ -172,17 +228,22 @@
 	import {
 		onStartLocs,
 		isProviderEnabled,
-		openLocSetting,
-		LocData,
-		stop,
+		isBackgroundLocAuthorized,
+		isNotificationPermissionAuthorized,
 		requestBackgroundLocPer,
+		requestNotificationPermission,
+		openLocSetting,
+		openAppDetailSetting,
+		openNotificationSetting,
+		stop,
 		getLastLocations,
-		LoctionData,
 	} from "@/uni_modules/uni-gpslocation"
+	import type { LocData, LocationQueryOptions, LocationData } from "@/uni_modules/uni-gpslocation"
 
 	type TestConfig = {
 		gps: boolean
-		backgroud: boolean
+		coordType: string
+		background: boolean
 		onlyOnce: boolean
 		timeText: string
 		distanceText: string
@@ -197,6 +258,10 @@
 		altitude: string
 		bearing: string
 		accuracy: string
+		signalLevel: string
+		satelliteCount: string
+		usedInFixCount: string
+		cn0DbHzAvg: string
 	}
 
 	function nowText(): string {
@@ -209,6 +274,43 @@
 
 	function safeNumberText(value: number): string {
 		return value.toString()
+	}
+
+	/**
+	 * @description 将信号等级数值转换为更易读的展示文案
+	 * @param {number} level 信号等级
+	 * @returns {string} 用于页面展示的信号等级文案
+	 */
+	function signalLevelText(level: number): string {
+		if (level < 0) return '不可用'
+		if (level == 0) return '0 / 无'
+		if (level == 1) return '1 / 弱'
+		if (level == 2) return '2 / 一般'
+		if (level == 3) return '3 / 良好'
+		return '4 / 强'
+	}
+
+	/**
+	 * @description 将平均 C/N0 数值转换为展示文案
+	 * @param {number} value 平均 C/N0 数值
+	 * @param {number} signalLevel 当前信号等级
+	 * @returns {string} 用于页面展示的平均 C/N0 文案
+	 */
+	function cn0DbHzText(value: number, signalLevel: number): string {
+		if (signalLevel < 0) return '不可用'
+		if (value <= 0) return '0'
+		return value.toFixed(1) + ' dB-Hz'
+	}
+
+	/**
+	 * @description 将页面中的数字文本安全解析为整数，非法值统一按 0 处理
+	 * @param {string} value 待解析的数字文本
+	 * @returns {number} 解析后的整数值
+	 */
+	function parseIntegerText(value: string): number {
+		const parsed = parseInt(value, 10)
+		if (isNaN(parsed)) return 0
+		return parsed
 	}
 
 	function locationTypeText(type: number): string {
@@ -226,6 +328,7 @@
 				statusMessage: '等待测试',
 				providerStatusText: '未检查',
 				backgroundPermissionText: '未检查',
+				notificationPermissionText: '未检查',
 				trackingStatusText: '未开始',
 				latestLocationPollingText: '未开始',
 				locationCountText: '0',
@@ -235,7 +338,8 @@
 				locationCount: 0,
 				config: {
 					gps: true,
-					backgroud: true,
+					coordType: 'gcj02',
+					background: true,
 					onlyOnce: false,
 					timeText: '5000',
 					distanceText: '0',
@@ -249,12 +353,19 @@
 					altitude: '-',
 					bearing: '-',
 					accuracy: '-',
+					signalLevel: '-',
+					satelliteCount: '-',
+					usedInFixCount: '-',
+					cn0DbHzAvg: '-',
 				} as DisplayLocation,
 			}
 		},
 		onLoad() {
 			this.pushLog('测试页已加载')
-			this.refreshProviderStatus()
+			this.refreshRuntimeStatus(false, false)
+		},
+		onShow() {
+			this.refreshRuntimeStatus(false, false)
 		},
 		onUnload() {
 			latestLocationPollingActive = false
@@ -274,11 +385,12 @@
 				})
 			},
 			buildLocData(): LocData {
-				const timeValue = this.config.timeText.toInt()
-				const distanceValue = this.config.distanceText.toInt()
+				const timeValue = parseIntegerText(this.config.timeText)
+				const distanceValue = parseIntegerText(this.config.distanceText)
 				return {
 					gps: this.config.gps,
-					backgroud: this.config.backgroud,
+					coordType: this.config.coordType,
+					background: this.config.background,
 					onlyOnce: this.config.onlyOnce,
 					time: timeValue > 0 ? timeValue : 1000,
 					distance: distanceValue >= 0 ? distanceValue : 0,
@@ -286,7 +398,16 @@
 					content: this.config.content,
 				} as LocData
 			},
-			updateLocation(data:LoctionData, source:string) {
+			/**
+			 * @description 构建最近定位查询参数，保持与持续定位的坐标系输出一致
+			 * @returns {LocationQueryOptions} 最近定位查询参数
+			 */
+			buildLocationQueryOptions(): LocationQueryOptions {
+				return {
+					coordType: this.config.coordType,
+				} as LocationQueryOptions
+			},
+			updateLocation(data:LocationData, source:string) {
 				this.locationCount = this.locationCount + 1
 				this.locationCountText = this.locationCount.toString()
 				this.lastLocationSource = source + ' / ' + locationTypeText(data.locationType)
@@ -297,17 +418,38 @@
 					altitude: safeNumberText(data.altitude),
 					bearing: safeNumberText(data.bearing),
 					accuracy: safeNumberText(data.accuracy),
+					signalLevel: signalLevelText(data.signalLevel),
+					satelliteCount: data.signalLevel < 0 ? '不可用' : safeNumberText(data.satelliteCount),
+					usedInFixCount: data.signalLevel < 0 ? '不可用' : safeNumberText(data.usedInFixCount),
+					cn0DbHzAvg: cn0DbHzText(data.cn0DbHzAvg, data.signalLevel),
 				} as DisplayLocation
 
 				const addressParts = [data.province, data.city, data.district, data.address].filter((item:string) => item.length > 0)
 				this.addressText = addressParts.length > 0 ? addressParts.join(' ') : '插件当前未提供逆地理信息'
-				this.pushLog(source + '：lat=' + data.lat + ', lng=' + data.lng + ', speed=' + data.speed)
+				this.pushLog(source + '：lat=' + data.lat + ', lng=' + data.lng + ', signal=' + data.signalLevel + ', sat=' + data.satelliteCount)
 			},
-			refreshProviderStatus() {
+			/**
+			 * @description 刷新页面运行状态，按需记录定位开关检查日志
+			 * @param {boolean} showFeedback 是否弹出提示
+			 * @param {boolean} writeLog 是否写入日志
+			 * @returns {void}
+			 */
+			refreshRuntimeStatus(showFeedback:boolean, writeLog:boolean) {
 				isProviderEnabled((enabled:boolean) => {
 					this.providerStatusText = enabled ? '已开启' : '未开启'
-					this.pushLog('定位开关状态：' + this.providerStatusText)
+					const message = '定位开关状态：' + this.providerStatusText
+					if (writeLog) {
+						this.pushLog(message)
+					}
+					if (showFeedback) {
+						this.showToast(message)
+					}
 				})
+				this.refreshBackgroundPermissionStatus()
+				this.refreshNotificationPermissionStatus()
+			},
+			refreshProviderStatus(showFeedback:boolean) {
+				this.refreshRuntimeStatus(showFeedback, true)
 			},
 			openSystemLocationSetting() {
 				openLocSetting((opened:boolean) => {
@@ -316,28 +458,152 @@
 					this.showToast(message)
 				})
 			},
+			/**
+			 * @description 检查后台定位权限状态并更新页面展示
+			 * @returns {void}
+			 */
+			refreshBackgroundPermissionStatus() {
+				isBackgroundLocAuthorized((granted:boolean) => {
+					this.backgroundPermissionText = granted ? '已授权' : '需系统设置开启'
+				})
+			},
+			/**
+			 * @description 检查通知权限状态并更新页面展示
+			 * @returns {void}
+			 */
+			refreshNotificationPermissionStatus() {
+				isNotificationPermissionAuthorized((granted:boolean) => {
+					this.notificationPermissionText = granted ? '已开启' : '需通知设置开启'
+				})
+			},
+			/**
+			 * @description 点击申请后台定位权限时先尝试触发系统授权，再按结果决定是否继续引导
+			 * @returns {void}
+			 */
 			requestBackgroundPermission() {
 				requestBackgroundLocPer((granted:boolean) => {
-					this.backgroundPermissionText = granted ? '已授权' : '需系统设置开启'
-					const message = granted ? '后台定位权限已授权' : '后台定位权限未就绪，请在系统权限页开启始终允许'
+					this.refreshBackgroundPermissionStatus()
+					if (granted) {
+						const message = '后台定位权限已授权'
+						this.pushLog(message)
+						this.showToast(message)
+						return
+					}
+					uni.showModal({
+						title: '前往应用详情',
+						content: '后台定位通常需要在应用详情页中手动开启定位权限，并选择“始终允许”或系统对应的后台定位选项。Android 13+ 还需要允许通知权限，前台服务通知才会显示。',
+						confirmText: '去设置',
+						cancelText: '取消',
+						success: (res) => {
+							if (!res.confirm) {
+								this.pushLog('已取消跳转应用详情页')
+								return
+							}
+							this.openAppDetailSettingForBackgroundPermission()
+						},
+						fail: () => {
+							this.pushLog('后台定位提示弹窗打开失败')
+							this.showToast('弹窗打开失败')
+						},
+					})
+				})
+			},
+			/**
+			 * @description 点击申请通知权限时先尝试触发系统授权，再按结果决定是否跳转通知设置页
+			 * @returns {void}
+			 */
+			requestNotificationAccess() {
+				requestNotificationPermission((granted:boolean) => {
+					this.refreshNotificationPermissionStatus()
+					if (granted) {
+						const message = '应用通知已开启'
+						this.pushLog(message)
+						this.showToast(message)
+						return
+					}
+					uni.showModal({
+						title: '前往通知设置',
+						content: '应用通知未开启，或当前定位通知渠道被关闭，前台服务通知可能不会显示。是否前往通知设置页继续开启？',
+						confirmText: '去设置',
+						cancelText: '取消',
+						success: (res) => {
+							if (!res.confirm) {
+								this.pushLog('已取消跳转通知设置页')
+								return
+							}
+							this.openNotificationSettingPage()
+						},
+						fail: () => {
+							this.pushLog('通知权限提示弹窗打开失败')
+							this.showToast('弹窗打开失败')
+						},
+					})
+				})
+			},
+			/**
+			 * @description 打开应用详情页，方便手动开启后台定位相关权限
+			 * @returns {void}
+			 */
+			openAppDetailSettingForBackgroundPermission() {
+				openAppDetailSetting((opened:boolean) => {
+					this.backgroundPermissionText = opened ? '待系统设置开启' : '打开失败'
+					const message = opened ? '已打开应用详情页，请开启后台定位并允许通知权限' : '打开应用详情页失败'
 					this.pushLog(message)
 					this.showToast(message)
 				})
 			},
-			fetchLastLocation(source:string) {
-				getLastLocations((data:LoctionData) => {
+			/**
+			 * @description 打开通知设置页，引导用户开启应用通知或定位通知渠道
+			 * @returns {void}
+			 */
+			openNotificationSettingPage() {
+				openNotificationSetting((opened:boolean) => {
+					this.notificationPermissionText = opened ? '待系统设置开启' : '打开失败'
+					const message = opened ? '已打开通知设置页，请开启应用通知后重新开始定位' : '打开通知设置页失败'
+					this.pushLog(message)
+					this.showToast(message)
+				})
+			},
+			/**
+			 * @description 真正开始持续定位监听
+			 * @returns {void}
+			 */
+			beginWatch() {
+				const locData = this.buildLocData()
+				this.trackingStatusText = '启动中'
+				const message =
+					'开始定位：gps=' + locData.gps +
+					', coordType=' + locData.coordType +
+					', background=' + locData.background +
+					', onlyOnce=' + locData.onlyOnce +
+					', time=' + locData.time +
+					', distance=' + locData.distance
+				this.pushLog(message)
+				this.showToast(this.config.onlyOnce ? '已开始单次定位' : '已开始持续定位')
+				onStartLocs(locData, (data:LocationData) => {
+					this.trackingStatusText = this.config.onlyOnce ? '单次完成' : '监听中'
+					this.updateLocation(data, '实时回调')
+				})
+				this.trackingStatusText = '监听中'
+			},
+			fetchLastLocation(source:string, showFeedback:boolean) {
+				getLastLocations(this.buildLocationQueryOptions(), (data:LocationData) => {
 					this.updateLocation(data, source)
+					if (showFeedback) {
+						this.showToast(source + '已刷新')
+					}
 				})
 			},
 			getLastLocation() {
-				this.fetchLastLocation('最近位置')
+				this.fetchLastLocation('最近位置', true)
 			},
 			scheduleLatestLocationPolling(token:number) {
-				const delayMs = this.config.timeText.toInt() > 0 ? this.config.timeText.toInt() : 1000
+				const timeValue = parseIntegerText(this.config.timeText)
+				const delayMs = timeValue > 0 ? timeValue : 1000
 				setTimeout(() => {
 					if (!latestLocationPollingActive) return
 					if (token != latestLocationPollingToken) return
-					this.fetchLastLocation('定时最近位置')
+					this.fetchLastLocation('定时最近位置', false)
 					this.scheduleLatestLocationPolling(token)
 				}, delayMs)
 			},
@@ -350,33 +616,55 @@
 				latestLocationPollingActive = true
 				latestLocationPollingToken = latestLocationPollingToken + 1
 				const token = latestLocationPollingToken
-				const delayMs = this.config.timeText.toInt() > 0 ? this.config.timeText.toInt() : 1000
+				const timeValue = parseIntegerText(this.config.timeText)
+				const delayMs = timeValue > 0 ? timeValue : 1000
 				this.latestLocationPollingText = '轮询中'
-				this.pushLog('开始定时获取最近位置，间隔 ' + (delayMs / 1000).toString() + ' 秒')
-				this.fetchLastLocation('定时最近位置')
+				const message = '开始定时获取最近位置，间隔 ' + (delayMs / 1000).toString() + ' 秒'
+				this.pushLog(message)
+				this.showToast(message)
+				this.fetchLastLocation('定时最近位置', false)
 				this.scheduleLatestLocationPolling(token)
 			},
 			stopLatestLocationPolling() {
 				latestLocationPollingActive = false
 				latestLocationPollingToken = latestLocationPollingToken + 1
 				this.latestLocationPollingText = '已停止'
-				this.pushLog('已停止定时获取最近位置')
+				const message = '已停止定时获取最近位置'
+				this.pushLog(message)
+				this.showToast(message)
 			},
 			startWatch() {
-				const locData = this.buildLocData()
-				this.trackingStatusText = '启动中'
-				this.pushLog(
-					'开始定位：gps=' + locData.gps +
-					', backgroud=' + locData.backgroud +
-					', onlyOnce=' + locData.onlyOnce +
-					', time=' + locData.time +
-					', distance=' + locData.distance
-				)
-				onStartLocs(locData, (data:LoctionData) => {
-					this.trackingStatusText = this.config.onlyOnce ? '单次完成' : '监听中'
-					this.updateLocation(data, '实时回调')
+				if (!this.config.background) {
+					this.pushLog('当前未开启后台定位，本次持续定位不会显示通知栏前台服务通知')
+					this.beginWatch()
+					return
+				}
+				requestNotificationPermission((granted:boolean) => {
+					this.refreshNotificationPermissionStatus()
+					if (granted) {
+						this.beginWatch()
+						return
+					}
+					this.trackingStatusText = '待通知权限'
+					this.pushLog('通知状态未就绪，前台服务通知可能不会显示，请先开启应用通知')
+					uni.showModal({
+						title: '需要通知权限',
+						content: '后台持续定位依赖前台服务通知显示。请先允许应用通知；如果仍未显示，请在通知设置页中检查应用通知与定位通知渠道是否已开启。',
+						confirmText: '去设置',
+						cancelText: '取消',
+						success: (res) => {
+							if (!res.confirm) {
+								this.showToast('未开启通知权限，已取消开始定位')
+								return
+							}
+							this.openNotificationSettingPage()
+						},
+						fail: () => {
+							this.pushLog('通知权限提示弹窗打开失败')
+							this.showToast('弹窗打开失败')
+						},
+					})
 				})
-				this.trackingStatusText = '监听中'
 			},
 			stopWatch() {
 				stop(true, (_res:boolean) => {
@@ -391,7 +679,7 @@
 			},
 			applyGpsPreset() {
 				this.config.gps = true
-				this.config.backgroud = true
+				this.config.background = true
 				this.config.onlyOnce = false
 				this.config.timeText = '3000'
 				this.config.distanceText = '1'
@@ -401,7 +689,7 @@
 			},
 			applyBalancedPreset() {
 				this.config.gps = false
-				this.config.backgroud = false
+				this.config.background = false
 				this.config.onlyOnce = false
 				this.config.timeText = '5000'
 				this.config.distanceText = '0'
@@ -411,7 +699,7 @@
 			},
 			applyOncePreset() {
 				this.config.gps = true
-				this.config.backgroud = false
+				this.config.background = false
 				this.config.onlyOnce = true
 				this.config.timeText = '1000'
 				this.config.distanceText = '0'
@@ -423,28 +711,36 @@
 				this.config.gps = !this.config.gps
 				this.pushLog('使用 GPS：' + (this.config.gps ? '开启' : '关闭'))
 			},
+			useGcj02CoordType() {
+				this.config.coordType = 'gcj02'
+				this.pushLog('输出坐标系：GCJ02')
+			},
+			useWgs84CoordType() {
+				this.config.coordType = 'wgs84'
+				this.pushLog('输出坐标系：WGS84')
+			},
 			toggleBackground() {
-				this.config.backgroud = !this.config.backgroud
-				this.pushLog('后台定位：' + (this.config.backgroud ? '开启' : '关闭'))
+				this.config.background = !this.config.background
+				this.pushLog('后台定位：' + (this.config.background ? '开启' : '关闭'))
 			},
 			toggleOnlyOnce() {
 				this.config.onlyOnce = !this.config.onlyOnce
 				this.pushLog('仅一次：' + (this.config.onlyOnce ? '开启' : '关闭'))
 			},
 			increaseTime() {
-				const nextValue = this.config.timeText.toInt() + 1000
+				const nextValue = parseIntegerText(this.config.timeText) + 1000
 				this.config.timeText = nextValue.toString()
 			},
 			decreaseTime() {
-				const nextValue = this.config.timeText.toInt() - 1000
+				const nextValue = parseIntegerText(this.config.timeText) - 1000
 				this.config.timeText = (nextValue > 1000 ? nextValue : 1000).toString()
 			},
 			increaseDistance() {
-				const nextValue = this.config.distanceText.toInt() + 1
+				const nextValue = parseIntegerText(this.config.distanceText) + 1
 				this.config.distanceText = nextValue.toString()
 			},
 			decreaseDistance() {
-				const nextValue = this.config.distanceText.toInt() - 1
+				const nextValue = parseIntegerText(this.config.distanceText) - 1
 				this.config.distanceText = (nextValue > 0 ? nextValue : 0).toString()
 			},
 			useTitlePresetA() {
@@ -567,18 +863,28 @@
 
 	.action-grid {
 		display: flex;
-		flex-direction: row;
-		flex-wrap: wrap;
-		margin: 0 -8rpx;
+		flex-direction: column;
+	}
+
+	.action-item {
+        margin-top: 12rpx;
+		padding: 20rpx;
+		border-radius: 22rpx;
+		background-color: #f7f2e8;
 	}
 
 	.action-btn {
-		width: 50%;
-		margin-bottom: 16rpx;
-		padding: 0 8rpx;
+		width: 100%;
+		margin-bottom: 12rpx;
 		box-sizing: border-box;
 		background-color: #dbe9ff;
 		color: #15304b;
+	}
+
+	.action-desc {
+		font-size: 23rpx;
+		line-height: 35rpx;
+		color: #55675d;
 	}
 
 	.primary {
@@ -679,6 +985,11 @@
 		margin-bottom: 12rpx;
 		background-color: #ece7dc;
 		color: #4b4335;
+	}
+
+	.mini-btn-active {
+		background-color: #d6f5eb;
+		color: #114232;
 	}
 
 	.hint-text {
