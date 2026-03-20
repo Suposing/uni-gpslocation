@@ -633,12 +633,43 @@
 				this.pushLog(message)
 				this.showToast(message)
 			},
-			startWatch() {
-				if (!this.config.background) {
-					this.pushLog('当前未开启后台定位，本次持续定位不会显示通知栏前台服务通知')
-					this.beginWatch()
-					return
-				}
+			/**
+			 * @description 后台持续定位前检查后台定位权限，未就绪时引导用户去系统设置完成授权
+			 * @returns {void}
+			 */
+			ensureBackgroundPermissionBeforeWatch() {
+				isBackgroundLocAuthorized((granted:boolean) => {
+					this.refreshBackgroundPermissionStatus()
+					if (granted) {
+						this.ensureNotificationPermissionBeforeBackgroundWatch()
+						return
+					}
+					this.trackingStatusText = '待后台权限'
+					this.pushLog('后台定位权限未就绪，请先在系统设置中将定位权限调整为始终允许')
+					uni.showModal({
+						title: '需要后台定位权限',
+						content: '后台持续定位需要在应用详情页中将定位权限调整为“始终允许”或系统对应的后台定位选项。权限未就绪时不会继续启动定位，避免 Android 13 等系统直接闪退。',
+						confirmText: '去设置',
+						cancelText: '取消',
+						success: (res) => {
+							if (!res.confirm) {
+								this.showToast('未开启后台定位权限，已取消开始定位')
+								return
+							}
+							this.openAppDetailSettingForBackgroundPermission()
+						},
+						fail: () => {
+							this.pushLog('后台定位权限提示弹窗打开失败')
+							this.showToast('弹窗打开失败')
+						},
+					})
+				})
+			},
+			/**
+			 * @description 后台持续定位前检查通知状态，未就绪时引导用户打开通知设置页
+			 * @returns {void}
+			 */
+			ensureNotificationPermissionBeforeBackgroundWatch() {
 				requestNotificationPermission((granted:boolean) => {
 					this.refreshNotificationPermissionStatus()
 					if (granted) {
@@ -665,6 +696,18 @@
 						},
 					})
 				})
+			},
+			/**
+			 * @description 根据当前配置启动定位；后台模式会先校验后台权限与通知状态
+			 * @returns {void}
+			 */
+			startWatch() {
+				if (!this.config.background) {
+					this.pushLog('当前未开启后台定位，本次持续定位不会显示通知栏前台服务通知')
+					this.beginWatch()
+					return
+				}
+				this.ensureBackgroundPermissionBeforeWatch()
 			},
 			stopWatch() {
 				stop(true, (_res:boolean) => {

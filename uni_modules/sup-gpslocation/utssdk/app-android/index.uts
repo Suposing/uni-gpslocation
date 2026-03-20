@@ -140,6 +140,71 @@ function isNotificationAccessEnabled(): boolean {
 	}
 }
 
+function hasForegroundLocationPermission(): boolean {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) return false
+	try {
+		return UTSAndroid.checkSystemPermissionGranted(act, ['android.permission.ACCESS_FINE_LOCATION']) ||
+			UTSAndroid.checkSystemPermissionGranted(act, ['android.permission.ACCESS_COARSE_LOCATION'])
+	} catch (e) {
+		return false
+	}
+}
+
+function hasBackgroundLocationPermission(): boolean {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) return false
+	try {
+		if (Build.VERSION.SDK_INT < 29) return true
+		return UTSAndroid.checkSystemPermissionGranted(act, ['android.permission.ACCESS_BACKGROUND_LOCATION'])
+	} catch (e) {
+		return false
+	}
+}
+
+function isForegroundLocationPermissionRequest(perms: Array<string>): boolean {
+	let hasLocationPermission = false
+	let index = 0
+	while (index < perms.length) {
+		const permission = perms[index]
+		if (permission == 'android.permission.ACCESS_FINE_LOCATION' || permission == 'android.permission.ACCESS_COARSE_LOCATION') {
+			hasLocationPermission = true
+			break
+		}
+		index += 1
+	}
+	return hasLocationPermission
+}
+
+/**
+ * @description 根据权限请求结果重新读取系统授权状态，避免将“弹窗结束”误判为“权限已授予”
+ * @param {Array<string>} perms 本次请求的权限列表
+ * @returns {boolean} 当前权限是否真正满足
+ */
+function resolvePermissionRequestResult(perms: Array<string>): boolean {
+	const act = UTSAndroid.getUniActivity()
+	if (act == null) return false
+	if (isForegroundLocationPermissionRequest(perms)) {
+		return hasForegroundLocationPermission()
+	}
+	try {
+		return UTSAndroid.checkSystemPermissionGranted(act, perms)
+	} catch (e) {
+		return false
+	}
+}
+
+/**
+ * @description 判断当前是否满足启动后台持续定位的最小权限条件
+ * @param {boolean} background 是否按后台定位模式启动
+ * @returns {boolean} 是否允许继续启动后台持续定位
+ */
+function canStartBackgroundLocationTracking(background: boolean): boolean {
+	if (!hasForegroundLocationPermission()) return false
+	if (!background) return true
+	return hasBackgroundLocationPermission()
+}
+
 function resetGnssSignalState(signalLevel: number = SIGNAL_LEVEL_UNAVAILABLE) {
 	_signalLevel = signalLevel
 	_satelliteCount = 0
@@ -420,18 +485,28 @@ function buildNotification(ctx: Context): Notification {
 	return builder.build()
 }
 
-function startForegroundServiceIfNeeded() {
-	if (_serviceRunning) return
+/**
+ * @description 启动定位前台服务，失败时返回 false，避免系统异常直接导致应用闪退
+ * @returns {boolean} 前台服务是否已成功启动
+ */
+function startForegroundServiceIfNeeded(): boolean {
+	if (_serviceRunning) return true
 	const ctx = getContext()
-	if (ctx == null) return
+	if (ctx == null) return false
 	const intent = new Intent()
 	intent.setClassName(ctx, 'uts.sdk.modules.uniGpslocation.GpsLocationService')
-	if (Build.VERSION.SDK_INT >= 26) {
-		ctx.startForegroundService(intent)
-	} else {
-		ctx.startService(intent)
+	try {
+		if (Build.VERSION.SDK_INT >= 26) {
+			ctx.startForegroundService(intent)
+		} else {
+			ctx.startService(intent)
+		}
+		_serviceRunning = true
+		return true
+	} catch (e) {
+		_serviceRunning = false
+		return false
 	}
-	_serviceRunning = true
 }
 
 function stopForegroundServiceIfNeeded() {
@@ -500,7 +575,7 @@ function requestPermission(perms: Array<string>, cb: (ok: boolean) => void) {
 		UTSAndroid.requestSystemPermission(
 			act,
 			perms,
-			(_granted: boolean, _perms: UTSArray<string>) => cb(true),
+			(_granted: boolean, _perms: UTSArray<string>) => cb(resolvePermissionRequestResult(perms)),
 			(_granted: boolean, _perms: UTSArray<string>) => cb(false)
 		)
 	} catch (e) {
@@ -729,10 +804,21 @@ export function onStartLocs(data: LocData, cb: LocationCallback) {
 
 	// 先请求前台定位权限（后台权限建议调用 requestBackgroundLocPer）
 	requestPermission(['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION'], (ok) => {
-		if (!ok) return
+		if (!ok) {
+			_callback = null
+			return
+		}
+		if (!canStartBackgroundLocationTracking(background)) {
+			_callback = null
+			return
+		}
 		ensureNotificationPermissionForForegroundService(background, (_notifGranted:boolean) => {
 			if (background) {
-				startForegroundServiceIfNeeded()
+				const started = startForegroundServiceIfNeeded()
+				if (!started) {
+					_callback = null
+					return
+				}
 			}
 			internalStartUpdates(preferGps, minTime, distanceM)
 		})
