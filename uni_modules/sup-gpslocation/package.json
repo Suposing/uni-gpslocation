@@ -1,16 +1,16 @@
 {
     "id": "sup-gpslocation",
     "displayName": "GPS定位 前后台定位 后台持续定位",
-    "version": "0.0.3",
+    "version": "0.0.4",
     "description": "UTS 插件，支持 Android/iOS 前台定位、后台定位、息屏持续定位与最近位置获取。",
     "keywords": [
-      "GPS定位",
-      "前后台定位",
-      "后台定位",
-      "持续定位",
-      "uts"
+        "GPS定位",
+        "前后台定位",
+        "后台定位",
+        "持续定位",
+        "uts"
     ],
-    "repository": "https://github.com/Suposing/uni-gpslocation",
+    "repository": "https://github.com/Suposing/sup-gpslocation",
     "engines": {
       "HBuilderX": "^3.99",
       "uni-app": "^4.07",
@@ -24,9 +24,20 @@
         "permissions": "<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" />\n<uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\" />\n<uses-permission android:name=\"android.permission.ACCESS_BACKGROUND_LOCATION\" />\n<uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />\n<uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_LOCATION\" />\n<uses-permission android:name=\"android.permission.WAKE_LOCK\" />\n<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />"
       },
       "npmurl": "",
-      "darkmode": "-",
-      "i18n": "-",
-      "widescreen": "-"
+      "darkmode": "x",
+      "i18n": "x",
+    "widescreen": "x",
+    "contact": {
+        "qq": ""
+    },
+    "sale": {
+        "regular": {
+            "price": "0.00"
+        },
+        "sourcecode": {
+            "price": "0.00"
+        }
+    }
     },
     "uni_modules": {
       "dependencies": [],
@@ -61,7 +72,8 @@
               "jd": "-",
               "harmony": "-",
               "qq": "-",
-              "lark": "-"
+            "lark": "-",
+            "xhs": "-"
             },
             "quickapp": {
               "huawei": "-",
